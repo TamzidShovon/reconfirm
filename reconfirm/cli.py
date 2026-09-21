@@ -15,12 +15,36 @@ from concurrent.futures import ThreadPoolExecutor
 from . import __version__, checks, report, sources
 from .checks import Target
 from .confidence import CONFIRMED, tally
-from .net import Scope, Session, resolves
+from .net import Scope, Session, addresses, resolves
 
 # DNS lookups are I/O bound and independent, and a dead name can sit on a
 # resolver timeout for a second or more. Serially that turns a 90-name
 # enumeration into a minute of waiting before the first probe.
 _RESOLVER_WORKERS = 16
+
+
+def _print_addresses(host_addresses):
+    """Print the host-to-address table, grouped so shared hosting is visible.
+
+    Several names on one address is worth seeing at a glance: it usually means
+    one box or one load balancer behind the whole surface, which changes how
+    much of the enumerated list is actually separate infrastructure.
+    """
+    by_address = {}
+    for host, found in host_addresses.items():
+        by_address.setdefault(",".join(found) or "-", []).append(host)
+
+    print("\nADDRESSES  (%d hosts on %d distinct address sets)"
+          % (len(host_addresses), len(by_address)))
+    print("-" * 52)
+    for address, names in sorted(by_address.items(), key=lambda kv: (-len(kv[1]), kv[0])):
+        print("  %s" % address)
+        for name in sorted(names):
+            print("      %s" % name)
+    # Progress goes to stderr unbuffered while this goes to stdout, so without
+    # a flush the table lands after the run it was meant to precede whenever
+    # stdout is a pipe rather than a terminal.
+    print(flush=True)
 
 
 def _partition_by_resolution(hosts):
@@ -56,8 +80,19 @@ def cmd_enumerate(args):
     hosts, notes = sources.enumerate_hosts(
         session, args.domain, use_wayback=not args.no_wayback, emit=emit
     )
-    for host in hosts:
-        print(host)
+
+    if args.ip:
+        emit("resolving %d hostnames" % len(hosts))
+        width = max((len(h) for h in hosts), default=0)
+        for host in hosts:
+            found = addresses(host)
+            # Tab-separated so the output still pipes into cut and awk; the
+            # padding is only there for reading it directly.
+            print("%s\t%s" % (host.ljust(width), ",".join(found) if found else "-"))
+    else:
+        for host in hosts:
+            print(host)
+
     for note in notes:
         print("note: %s" % note, file=sys.stderr)
     emit("%d unique hostnames" % len(hosts))
@@ -116,6 +151,12 @@ def cmd_scan(args):
         )
         hosts = hosts[:args.max_hosts]
 
+    # Resolution is already cached from the partition above, so this costs
+    # nothing beyond the formatting.
+    host_addresses = {h: addresses(h) for h in hosts} if args.ip else {}
+    if host_addresses:
+        _print_addresses(host_addresses)
+
     target = Target(domain=args.domain, hosts=hosts)
     emit("probing %d hosts with %d check(s), %.1fs between requests"
          % (len(hosts), len(modules), args.delay))
@@ -145,6 +186,7 @@ def cmd_scan(args):
         path = report.write_json(
             args.json, results, args.domain,
             notes=notes, requests_made=session.requests_made(),
+            addresses=host_addresses,
         )
         print("wrote %s" % path, file=sys.stderr)
 
@@ -177,6 +219,10 @@ def build_parser():
                        help="skip the Wayback Machine source")
         p.add_argument("-q", "--quiet", action="store_true",
                        help="suppress progress output on stderr")
+        # Both spellings: -ip is what people type for this, --ip is what
+        # argparse conventions expect.
+        p.add_argument("-ip", "--ip", dest="ip", action="store_true",
+                       help="resolve hosts and show their IP addresses")
 
     p_enum = sub.add_parser("enumerate", help="list hostnames from passive sources only")
     shared(p_enum)

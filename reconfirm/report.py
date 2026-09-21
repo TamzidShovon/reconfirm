@@ -102,9 +102,9 @@ def render(results, stream=None, show_discarded=False, width=96, notes=None):
         stream.write("note: %s\n" % note)
 
 
-def to_json(results, domain, notes=None, requests_made=None):
+def to_json(results, domain, notes=None, requests_made=None, addresses=None):
     results = sort_results(results)
-    return {
+    payload = {
         "domain": domain,
         "generated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "counts": tally(results),
@@ -112,10 +112,15 @@ def to_json(results, domain, notes=None, requests_made=None):
         "requests_made": requests_made or {},
         "results": [r.as_dict() for r in results],
     }
+    # Only present when --ip was passed. An empty mapping would read as "these
+    # hosts have no addresses" rather than "addresses were not looked up".
+    if addresses:
+        payload["addresses"] = {h: list(a) for h, a in sorted(addresses.items())}
+    return payload
 
 
-def write_json(path, results, domain, notes=None, requests_made=None):
-    payload = to_json(results, domain, notes, requests_made)
+def write_json(path, results, domain, notes=None, requests_made=None, addresses=None):
+    payload = to_json(results, domain, notes, requests_made, addresses)
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(payload, fh, indent=2)
     return path

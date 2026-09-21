@@ -82,3 +82,14 @@ def session():
     based and the test server has no name.
     """
     return Session(Scope(["127.0.0.1"]), min_interval=0.0, timeout=5)
+
+
+@pytest.fixture(autouse=True)
+def _clear_dns_cache():
+    """Resolution is cached module-wide, so one test's answer would otherwise
+    be served to the next -- including to tests that swap the resolver."""
+    from reconfirm.net import clear_lookup_cache
+
+    clear_lookup_cache()
+    yield
+    clear_lookup_cache()

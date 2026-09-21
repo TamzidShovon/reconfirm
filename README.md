@@ -109,6 +109,38 @@ Run one check against hosts you already have:
 python -m reconfirm scan example.com --hosts-from hosts.txt --checks takeover
 ```
 
+Resolve hosts and show their addresses, with `-ip` or `--ip`:
+
+```bash
+python -m reconfirm enumerate example.com -ip
+python -m reconfirm scan example.com -ip
+```
+
+`enumerate -ip` prints one tab-separated `host<TAB>addresses` line per host,
+so it still pipes into `cut` and `awk`; an unresolved host shows `-`.
+`scan -ip` prints a table grouped by address before probing, which makes
+shared hosting obvious at a glance:
+
+```
+ADDRESSES  (3 hosts on 2 distinct address sets)
+----------------------------------------------------
+  50.116.1.184
+      nmap.org
+      www.nmap.org
+  45.33.32.156
+      scanme.nmap.org
+```
+
+Several names on one address usually means one box or one load balancer
+behind the whole surface, which changes how much of an enumerated list is
+actually separate infrastructure. With `--json`, the same mapping is written
+under an `addresses` key — present only when `-ip` was passed, since an empty
+mapping would read as "these hosts have no addresses" rather than "addresses
+were not looked up". IPv4 and IPv6 both come back.
+
+The lookup is free: `scan` already resolves every host to decide which are
+worth probing, and `-ip` reuses that result rather than resolving twice.
+
 Useful flags: `--delay` (gap between requests, default 0.3s), `--budget`
 (max requests per host, default 200), `--max-hosts` (default 50),
 `--also-scope` (additional authorised domains), `--no-wayback`.

@@ -210,6 +210,56 @@ _NAME_NOT_FOUND = {
 }
 
 
+RESOLVED = "resolved"
+NXDOMAIN = "nxdomain"
+UNKNOWN = "unknown"
+
+# One lookup answers two questions -- does this name exist, and what is it
+# pointing at -- and a scan asks both. Caching by name keeps --ip free rather
+# than doubling every resolution.
+_LOOKUP_CACHE = {}
+
+
+def lookup(host):
+    """Resolve a name once. Returns (addresses, state).
+
+    state is RESOLVED, NXDOMAIN (authoritatively absent) or UNKNOWN (the
+    resolver could not answer, which is not the same thing -- see resolves).
+    Addresses are deduplicated and sorted, IPv4 and IPv6 together.
+    """
+    name = hostname_of(host)
+    if not name:
+        return [], NXDOMAIN
+    if name in _LOOKUP_CACHE:
+        return _LOOKUP_CACHE[name]
+
+    try:
+        infos = socket.getaddrinfo(name, None)
+        result = (sorted({info[4][0] for info in infos}), RESOLVED)
+    except socket.gaierror as e:
+        result = ([], NXDOMAIN if e.errno in _NAME_NOT_FOUND else UNKNOWN)
+    except Exception:
+        result = ([], UNKNOWN)
+
+    _LOOKUP_CACHE[name] = result
+    return result
+
+
+def clear_lookup_cache():
+    """Forget every resolution.
+
+    The cache is keyed by name and never expires, which is right for a CLI
+    that resolves a host list once and exits, and wrong for anything
+    long-lived or for tests that swap the resolver underneath it.
+    """
+    _LOOKUP_CACHE.clear()
+
+
+def addresses(host):
+    """Every address a name points at, or [] if it does not resolve."""
+    return lookup(host)[0]
+
+
 def resolves(host):
     """Whether DNS has any address record for this name.
 
@@ -225,22 +275,13 @@ def resolves(host):
     name = hostname_of(host)
     if not name:
         return False
-    try:
-        socket.getaddrinfo(name, None)
-        return True
-    except socket.gaierror as e:
-        # gaierror covers both "no such name" and "the resolver could not
-        # answer right now", and only the first is evidence. Treating them
-        # alike drops a live host from the scan on a transient blip and never
-        # says so -- which is the ambiguity-as-certainty mistake this package
-        # exists to argue against, committed by the package itself. Observed:
-        # testphp.vulnweb.com was silently skipped by one run and resolved
-        # fine seconds later.
-        return e.errno not in _NAME_NOT_FOUND
-    except Exception:
-        # Anything else (a permission error, an odd resolver) is ambiguous
-        # and must not be reported as "this name does not exist".
-        return True
+    # Only an authoritative "no such name" counts as absence. A resolver that
+    # could not answer leaves the question open, and treating the two alike
+    # drops a live host from the scan on a transient blip without ever saying
+    # so -- the ambiguity-as-certainty mistake this package argues against,
+    # committed by the package itself. Observed: testphp.vulnweb.com was
+    # silently skipped by one run and resolved fine seconds later.
+    return lookup(name)[1] != NXDOMAIN
 
 
 def short_error(error):
