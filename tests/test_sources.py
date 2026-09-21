@@ -96,3 +96,22 @@ def test_wayback_can_be_skipped():
     session = FakeSession({"crt.sh": (FakeResponse(200, payload=[]), None)})
     sources.enumerate_hosts(session, "example.com", use_wayback=False)
     assert not any("archive.org" in c for c in session.calls)
+
+
+def test_concatenation_artifacts_are_rejected():
+    # Came out of a real Wayback query for vulnweb.com.
+    assert sources._clean("testasp.vulnweb.comtestasp.vulnweb.com", "vulnweb.com") is None
+
+
+def test_encoding_artifacts_are_left_to_dns_not_guessed_at():
+    # "2ftestphp" is %2f + a label, and junk. "2fa" is a real subdomain. No
+    # pattern separates them, so _clean passes both through and the caller
+    # resolves them; see cli._partition_by_resolution.
+    assert sources._clean("2ftestphp.vulnweb.com", "vulnweb.com") == "2ftestphp.vulnweb.com"
+    assert sources._clean("2fa.vulnweb.com", "vulnweb.com") == "2fa.vulnweb.com"
+
+
+def test_legitimate_hosts_survive():
+    for name in ["testphp.vulnweb.com", "rest.vulnweb.com", "2fa.vulnweb.com",
+                 "api-v2.vulnweb.com", "3d.vulnweb.com"]:
+        assert sources._clean(name, "vulnweb.com") == name, name

@@ -10,11 +10,26 @@ what it is about to do before it does it.
 
 import argparse
 import sys
+from concurrent.futures import ThreadPoolExecutor
 
 from . import __version__, checks, report, sources
 from .checks import Target
 from .confidence import CONFIRMED, tally
-from .net import Scope, Session
+from .net import Scope, Session, resolves
+
+# DNS lookups are I/O bound and independent, and a dead name can sit on a
+# resolver timeout for a second or more. Serially that turns a 90-name
+# enumeration into a minute of waiting before the first probe.
+_RESOLVER_WORKERS = 16
+
+
+def _partition_by_resolution(hosts):
+    """Split hosts into (resolves, does not), preserving order."""
+    with ThreadPoolExecutor(max_workers=_RESOLVER_WORKERS) as pool:
+        flags = list(pool.map(resolves, hosts))
+    live = [h for h, ok in zip(hosts, flags) if ok]
+    dead = [h for h, ok in zip(hosts, flags) if not ok]
+    return live, dead
 
 
 def _emitter(quiet):
@@ -72,13 +87,28 @@ def cmd_scan(args):
         )
 
     hosts = [h for h in hosts if h in session.scope]
-    if args.max_hosts:
-        if len(hosts) > args.max_hosts:
+
+    # Resolve before truncating. --max-hosts used to take the first N in sort
+    # order, which spends the budget on whatever happens to sort first: on a
+    # live run that was twenty archived junk names, none of which resolved,
+    # while the hosts actually worth probing sat past the cutoff. DNS is cheap
+    # and answers the only question that matters for ordering.
+    if hosts:
+        emit("resolving %d hostnames" % len(hosts))
+        live, dead = _partition_by_resolution(hosts)
+        if dead:
             notes.append(
-                "probed the first %d of %d hostnames (--max-hosts); the rest were "
-                "not tested and are absent from these results rather than clear"
-                % (args.max_hosts, len(hosts))
+                "%d of %d enumerated names do not resolve and were not probed"
+                % (len(dead), len(hosts))
             )
+        hosts = live
+
+    if args.max_hosts and len(hosts) > args.max_hosts:
+        notes.append(
+            "probed %d of %d live hostnames (--max-hosts); the rest were not "
+            "tested and are absent from these results rather than clear"
+            % (args.max_hosts, len(hosts))
+        )
         hosts = hosts[:args.max_hosts]
 
     target = Target(domain=args.domain, hosts=hosts)

@@ -200,6 +200,16 @@ class Session:
         return dict(self._host_counts)
 
 
+# getaddrinfo errno values that mean the name authoritatively does not exist,
+# as opposed to the resolver being unable to answer. EAI_NONAME is the POSIX
+# spelling; WSAHOST_NOT_FOUND (11001) is the Windows one. Deliberately absent:
+# EAI_AGAIN and WSATRY_AGAIN (11002), which are temporary failures.
+_NAME_NOT_FOUND = {
+    getattr(socket, "EAI_NONAME", -2),
+    11001,  # WSAHOST_NOT_FOUND
+}
+
+
 def resolves(host):
     """Whether DNS has any address record for this name.
 
@@ -218,10 +228,17 @@ def resolves(host):
     try:
         socket.getaddrinfo(name, None)
         return True
-    except socket.gaierror:
-        return False
+    except socket.gaierror as e:
+        # gaierror covers both "no such name" and "the resolver could not
+        # answer right now", and only the first is evidence. Treating them
+        # alike drops a live host from the scan on a transient blip and never
+        # says so -- which is the ambiguity-as-certainty mistake this package
+        # exists to argue against, committed by the package itself. Observed:
+        # testphp.vulnweb.com was silently skipped by one run and resolved
+        # fine seconds later.
+        return e.errno not in _NAME_NOT_FOUND
     except Exception:
-        # Anything else (a resolver hiccup, a permission error) is ambiguous
+        # Anything else (a permission error, an odd resolver) is ambiguous
         # and must not be reported as "this name does not exist".
         return True
 

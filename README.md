@@ -125,7 +125,7 @@ pip install pytest
 python -m pytest tests/ -q
 ```
 
-122 tests. The checks are driven against a local HTTP server that serves the
+130 tests. The checks are driven against a local HTTP server that serves the
 awkward cases — a catch-all answering 200 to every path, a bucket listing whose
 keys belong to someone else, a PEM header with nothing behind it — because
 every rule here is a claim about behaviour against real responses, and

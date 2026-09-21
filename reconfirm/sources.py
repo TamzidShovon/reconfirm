@@ -37,6 +37,18 @@ def _clean(name, domain):
         return None
     if not _HOSTNAME_RE.match(name):
         return None
+    # A name containing the domain twice is a concatenation artifact
+    # ("testasp.vulnweb.comtestasp.vulnweb.com"), never a real host.
+    if name.count(domain) > 1:
+        return None
+    # Archived URLs also yield labels built from percent-escapes -- "2ftestphp"
+    # from %2f, "25252fwww" from %25252f. There is deliberately no pattern
+    # here for those. The obvious rule, rejecting labels that open with an
+    # escape's hex tail, also rejects 2fa and 3d, which are ordinary
+    # subdomains. Guessing which names are real is the failure mode this whole
+    # package argues against, and the caller already resolves every name
+    # before probing it: junk does not resolve, and DNS is evidence rather
+    # than a heuristic.
     return name
 
 

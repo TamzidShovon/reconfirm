@@ -45,3 +45,22 @@ def test_port_does_not_smuggle_a_host_into_scope():
 def test_loopback_with_port_matches_loopback_scope():
     # The exact case the controlled-target run exercises.
     assert "127.0.0.1:59194" in Scope(["127.0.0.1"])
+
+
+def test_partition_by_resolution_splits_live_from_dead():
+    from reconfirm.cli import _partition_by_resolution
+
+    live, dead = _partition_by_resolution([
+        "127.0.0.1",
+        "nonexistent-subdomain-for-tests.invalid",
+        "localhost",
+    ])
+    assert "127.0.0.1" in live
+    assert "nonexistent-subdomain-for-tests.invalid" in dead
+
+
+def test_partition_preserves_order():
+    from reconfirm.cli import _partition_by_resolution
+
+    live, _dead = _partition_by_resolution(["127.0.0.1", "localhost"])
+    assert live == ["127.0.0.1", "localhost"]

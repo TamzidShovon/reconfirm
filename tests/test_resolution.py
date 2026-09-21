@@ -94,3 +94,41 @@ def test_clean_host_is_reported_rather_than_omitted(server, session):
     assert len(results) == 1
     assert results[0].state == DISCARDED
     assert "no credential material" in results[0].summary
+
+
+def test_temporary_resolver_failure_is_not_treated_as_nxdomain(monkeypatch):
+    # EAI_AGAIN means "ask again", not "no such name". Treating it as NXDOMAIN
+    # silently drops a live host from the scan.
+    import socket as _socket
+
+    from reconfirm import net
+
+    def temporary_failure(*_a, **_kw):
+        raise _socket.gaierror(getattr(_socket, "EAI_AGAIN", 11002), "temporary failure")
+
+    monkeypatch.setattr(net.socket, "getaddrinfo", temporary_failure)
+    assert net.resolves("anything.example.com") is True
+
+
+def test_authoritative_nxdomain_is_treated_as_absent(monkeypatch):
+    import socket as _socket
+
+    from reconfirm import net
+
+    def not_found(*_a, **_kw):
+        raise _socket.gaierror(getattr(_socket, "EAI_NONAME", -2), "name not known")
+
+    monkeypatch.setattr(net.socket, "getaddrinfo", not_found)
+    assert net.resolves("anything.example.com") is False
+
+
+def test_windows_host_not_found_is_authoritative(monkeypatch):
+    import socket as _socket
+
+    from reconfirm import net
+
+    def not_found(*_a, **_kw):
+        raise _socket.gaierror(11001, "getaddrinfo failed")
+
+    monkeypatch.setattr(net.socket, "getaddrinfo", not_found)
+    assert net.resolves("anything.example.com") is False
