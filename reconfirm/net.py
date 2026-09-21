@@ -1,0 +1,201 @@
+"""
+HTTP plumbing shared by every check: scope enforcement, rate limiting, request
+budgets, and catch-all detection.
+
+Two of these are safety rails and two are correctness tools.
+
+Scope and budget are the rails. A recon tool aimed at the wrong host is at best
+rude and at worst illegal, so the target set is fixed before any check runs and
+a host that was never authorised cannot be reached even by a check with a bug
+in its URL construction. The per-host budget bounds how much traffic a single
+run can generate regardless of how many candidates the sources produced.
+
+Catch-all detection is the correctness tool, and it is the single highest-value
+routine in this package. A great many hosts answer 200 to literally any path —
+SPAs serving index.html on every route, CDNs with a friendly 404 page, WAFs
+returning a block page. Against those hosts, any check phrased as "did this
+path return 200?" reports every path it tried. Probing a path that cannot exist
+first, and comparing every later response against it, is what separates a real
+finding from a host that says yes to everything.
+"""
+
+import random
+import string
+import time
+from urllib.parse import urlparse
+
+import requests
+import urllib3
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+USER_AGENT = "reconfirm/0.1 (+https://github.com/TamzidShovon/reconfirm)"
+
+# Below this, two responses of the same content type are treated as the same
+# page. Generous enough to absorb a CSRF token or a timestamp in the markup,
+# tight enough that a genuinely different document is never mistaken for the
+# catch-all.
+CATCHALL_SIZE_TOLERANCE = 250
+
+
+class OutOfScope(Exception):
+    """A check tried to reach a host the run was not authorised for."""
+
+
+class BudgetExhausted(Exception):
+    """The per-host request budget for this run is spent."""
+
+
+def _canary_path():
+    tail = "".join(random.choices(string.ascii_lowercase + string.digits, k=14))
+    return "/__reconfirm_canary_%s__" % tail
+
+
+class Scope:
+    """The set of registrable domains a run is allowed to touch.
+
+    Membership is suffix-based so subdomains discovered mid-run are covered,
+    but the boundary is a label boundary: "notexample.com" does not match
+    "example.com". Getting that wrong is how a tool wanders onto a lookalike
+    domain owned by someone else.
+    """
+
+    def __init__(self, domains):
+        self.domains = {d.lower().lstrip(".").rstrip(".") for d in domains if d}
+
+    def __contains__(self, host):
+        h = (host or "").lower().rstrip(".")
+        return any(h == d or h.endswith("." + d) for d in self.domains)
+
+    def __iter__(self):
+        return iter(sorted(self.domains))
+
+    def __repr__(self):
+        return "Scope(%s)" % ", ".join(sorted(self.domains))
+
+
+class Session:
+    def __init__(self, scope, min_interval=0.3, per_host_budget=200, timeout=8):
+        self.scope = scope
+        self.min_interval = min_interval
+        self.per_host_budget = per_host_budget
+        self.timeout = timeout
+        self._http = requests.Session()
+        self._http.verify = False
+        self._http.headers.update({"User-Agent": USER_AGENT})
+        self._last_request = 0.0
+        self._host_counts = {}
+        self._catchalls = {}
+
+    # ── requests ──────────────────────────────────────────────────────────
+
+    def get(self, url, **kw):
+        """Rate-limited GET returning (response, error).
+
+        Transport failures come back as an error string rather than an
+        exception because for most callers a failed request is an ordinary
+        inconclusive outcome, not an exceptional one — see confidence.py.
+        Scope and budget violations *do* raise: those are bugs or hard stops,
+        not results.
+        """
+        host = urlparse(url).hostname or ""
+        if host not in self.scope:
+            raise OutOfScope("%s is not in %r" % (host, self.scope))
+
+        used = self._host_counts.get(host, 0)
+        if used >= self.per_host_budget:
+            raise BudgetExhausted(
+                "%s: per-host budget of %d requests is spent" % (host, self.per_host_budget)
+            )
+        self._host_counts[host] = used + 1
+
+        gap = time.time() - self._last_request
+        if gap < self.min_interval:
+            time.sleep(self.min_interval - gap)
+        self._last_request = time.time()
+
+        kw.setdefault("timeout", self.timeout)
+        try:
+            return self._http.get(url, **kw), None
+        except Exception as e:
+            return None, "%s: %s" % (type(e).__name__, e)
+
+    def get_external(self, url, **kw):
+        """GET a third-party service (crt.sh, the Wayback CDX API).
+
+        Deliberately separate from get(): those hosts are not in scope and
+        never should be, but they are also not the target, so routing them
+        through the same scope check would mean either weakening the check or
+        adding the world to the scope. Keeping them on their own method means
+        the scope rule stays absolute for everything aimed at the target.
+        """
+        gap = time.time() - self._last_request
+        if gap < self.min_interval:
+            time.sleep(self.min_interval - gap)
+        self._last_request = time.time()
+        kw.setdefault("timeout", self.timeout)
+        try:
+            return self._http.get(url, **kw), None
+        except Exception as e:
+            return None, "%s: %s" % (type(e).__name__, e)
+
+    # ── catch-all detection ───────────────────────────────────────────────
+
+    def catchall(self, url):
+        """Fingerprint of how an origin answers a path that cannot exist.
+
+        Returns None when the origin was unreachable or answers the canary
+        with something other than 200 — the latter being the well-behaved case,
+        where a 404 means 404 and no comparison is needed. Cached per origin;
+        one probe per host per run.
+        """
+        parsed = urlparse(url)
+        origin = "%s://%s" % (parsed.scheme, parsed.netloc)
+        if origin in self._catchalls:
+            return self._catchalls[origin]
+
+        info = None
+        r, _err = self.get(origin + _canary_path(), allow_redirects=False)
+        if r is not None and r.status_code == 200:
+            info = {
+                "status": r.status_code,
+                "size": len(r.content),
+                "ctype": r.headers.get("Content-Type", "").split(";")[0].strip().lower(),
+            }
+        self._catchalls[origin] = info
+        return info
+
+    def is_catchall_response(self, url, response):
+        """True when this response is indistinguishable from the origin's
+        answer to a path that does not exist."""
+        fingerprint = self.catchall(url)
+        if not fingerprint or response.status_code != 200:
+            return False
+        ctype = response.headers.get("Content-Type", "").split(";")[0].strip().lower()
+        if ctype != fingerprint["ctype"]:
+            return False
+        return abs(len(response.content) - fingerprint["size"]) < CATCHALL_SIZE_TOLERANCE
+
+    def requests_made(self):
+        return dict(self._host_counts)
+
+
+def fetch_site(session, host, **kw):
+    """GET a hostname over HTTPS, falling back to HTTP.
+
+    Shared by every check that starts from a bare hostname. Enumeration yields
+    names, not URLs, and a meaningful share of what turns up — old staging
+    boxes, appliance interfaces, the dangling hosts the takeover check exists
+    to find — answers on HTTP only. Assuming HTTPS silently skips them.
+
+    Returns (url, response, error). The URL is the one that answered, so
+    callers resolve relative links against the right scheme.
+    """
+    last_error = ""
+    for scheme in ("https", "http"):
+        url = "%s://%s" % (scheme, host)
+        response, error = session.get(url, **kw)
+        if response is not None:
+            return url, response, ""
+        last_error = error
+    return "https://%s" % host, None, last_error

@@ -1,0 +1,44 @@
+"""
+The check contract, and the registry of available checks.
+
+A check receives a Target and the shared Session, and returns Results. It does
+not print findings, decide severity, or write files — that separation is what
+lets the test suite drive a check against a local server and assert on its
+states directly, which is how every rule in docs/CONFIDENCE.md is held in
+place.
+
+Adding a check means writing a module with NAME, DESCRIPTION and run(), then
+listing it in CHECKS below.
+"""
+
+from dataclasses import dataclass, field
+
+from . import buckets, secrets, takeover
+
+
+@dataclass
+class Target:
+    domain: str
+    hosts: list = field(default_factory=list)
+    """`domain` is the registrable domain the run was authorised against;
+    `hosts` are the hostnames enumeration produced. Checks that probe iterate
+    hosts and resolve their own scheme via net.fetch_site; checks that derive
+    names from the organisation, like buckets, use domain."""
+
+
+CHECKS = {
+    module.NAME: module
+    for module in (takeover, secrets, buckets)
+}
+
+
+def get(names):
+    """Resolve check names to modules, raising on an unknown name rather than
+    silently running fewer checks than the user asked for."""
+    unknown = [n for n in names if n not in CHECKS]
+    if unknown:
+        raise KeyError(
+            "unknown check(s): %s (available: %s)"
+            % (", ".join(unknown), ", ".join(sorted(CHECKS)))
+        )
+    return [CHECKS[n] for n in names]
