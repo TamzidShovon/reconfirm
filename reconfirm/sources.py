@@ -41,11 +41,7 @@ def _clean(name, domain):
 
 
 def from_certificates(session, domain, limit=500):
-    """Subdomains from certificate transparency, via crt.sh.
-
-    Returns (hostnames, note); a source failure is reported in the note
-    rather than raised.
-    """
+    """Subdomains from certificate transparency, via crt.sh."""
     r, err = session.get_external(CRTSH_URL.format(domain=domain), timeout=30)
     if r is None:
         return [], "crt.sh unreachable (%s)" % err
@@ -69,11 +65,7 @@ def from_certificates(session, domain, limit=500):
 
 
 def from_wayback(session, domain, limit=2000):
-    """Subdomains seen in archived URLs.
-
-    Noisier than CT and far more likely to be long dead. Returns
-    (hostnames, note).
-    """
+    """Subdomains seen in archived URLs."""
     r, err = session.get_external(
         WAYBACK_URL.format(domain=domain, limit=limit), timeout=30
     )
@@ -92,11 +84,7 @@ def from_wayback(session, domain, limit=2000):
 
 
 def enumerate_hosts(session, domain, use_wayback=True, emit=None):
-    """Run every enabled source and merge the candidates.
-
-    Returns (hostnames, notes). Notes carry source failures so a half-run
-    enumeration is not presented as a complete one.
-    """
+    """Run every enabled source and merge the candidates."""
     emit = emit or (lambda _msg: None)
     # The apex is given, not discovered. Seeding it means a source outage
     # degrades to "checked the apex only" rather than checking nothing.

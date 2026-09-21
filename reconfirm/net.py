@@ -48,11 +48,7 @@ def hostname_of(host):
 
 
 class Scope:
-    """The registrable domains a run is allowed to touch.
-
-    Membership is suffix-based and matches on label boundaries, so
-    "notexample.com" is not inside "example.com".
-    """
+    """The registrable domains a run is allowed to touch."""
 
     def __init__(self, domains):
         self.domains = {d.lower().lstrip(".").rstrip(".") for d in domains if d}
@@ -81,14 +77,10 @@ class Session:
         self._host_counts = {}
         self._catchalls = {}
 
-    # ── requests ──────────────────────────────────────────────────────────
+    # --- requests ---
 
     def get(self, url, **kw):
-        """Rate-limited GET returning (response, error).
-
-        Transport failures return an error string; scope and budget
-        violations raise.
-        """
+        """Rate-limited GET returning (response, error)."""
         host = urlparse(url).hostname or ""
         if host not in self.scope:
             raise OutOfScope("%s is not in %r" % (host, self.scope))
@@ -112,11 +104,7 @@ class Session:
             return None, "%s: %s" % (type(e).__name__, e)
 
     def get_external(self, url, **kw):
-        """GET a third-party service (crt.sh, the Wayback CDX API).
-
-        Separate from get() so the scope rule stays absolute for everything
-        aimed at the target.
-        """
+        """GET a third-party service (crt.sh, the Wayback CDX API)."""
         gap = time.time() - self._last_request
         if gap < self.min_interval:
             time.sleep(self.min_interval - gap)
@@ -127,14 +115,10 @@ class Session:
         except Exception as e:
             return None, "%s: %s" % (type(e).__name__, e)
 
-    # ── catch-all detection ───────────────────────────────────────────────
+    # --- catch-all detection ---
 
     def catchall(self, url):
-        """Fingerprint of how an origin answers a path that cannot exist.
-
-        None when the origin was unreachable or answered the canary with
-        anything but 200. Cached per origin.
-        """
+        """Fingerprint of how an origin answers a path that cannot exist."""
         parsed = urlparse(url)
         origin = "%s://%s" % (parsed.scheme, parsed.netloc)
         if origin in self._catchalls:
@@ -152,8 +136,7 @@ class Session:
         return info
 
     def is_catchall_response(self, url, response):
-        """True when this response is indistinguishable from the origin's
-        answer to a path that does not exist."""
+        """True when this response matches the origin's catch-all page."""
         fingerprint = self.catchall(url)
         if not fingerprint or response.status_code != 200:
             return False
@@ -183,12 +166,7 @@ _LOOKUP_CACHE = {}
 
 
 def lookup(host):
-    """Resolve a name once. Returns (addresses, state).
-
-    state is RESOLVED, NXDOMAIN (authoritatively absent) or UNKNOWN (the
-    resolver could not answer, which is not the same thing -- see resolves).
-    Addresses are deduplicated and sorted, IPv4 and IPv6 together.
-    """
+    """Resolve a name once. Returns (addresses, state)."""
     name = hostname_of(host)
     if not name:
         return [], NXDOMAIN
@@ -218,11 +196,7 @@ def addresses(host):
 
 
 def resolves(host):
-    """Whether DNS has an address record for this name.
-
-    Only an authoritative NXDOMAIN counts as absence; a resolver that could
-    not answer leaves the question open.
-    """
+    """Whether DNS has an address record for this name."""
     name = hostname_of(host)
     if not name:
         return False
@@ -251,11 +225,7 @@ def short_error(error):
 
 
 def fetch_site(session, host, **kw):
-    """GET a hostname over HTTPS, falling back to HTTP.
-
-    Returns (url, response, error), where url is the one that answered so
-    callers resolve relative links against the right scheme.
-    """
+    """GET a hostname over HTTPS, falling back to HTTP."""
     last_error = ""
     for scheme in ("https", "http"):
         url = "%s://%s" % (scheme, host)

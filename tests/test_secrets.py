@@ -7,7 +7,7 @@ from reconfirm.confidence import CONFIRMED, DISCARDED, UNVERIFIED
 from tests.conftest import Routes
 
 
-# ── value classification ──────────────────────────────────────────────────
+# --- value classification ---
 
 @pytest.mark.parametrize("value, fragment", [
     ("", "empty value"),
@@ -50,7 +50,7 @@ def test_redaction_keeps_locator_not_credential():
     assert "IOSFODNN" not in redacted
 
 
-# ── scanning ──────────────────────────────────────────────────────────────
+# --- scanning ---
 
 def test_structural_match_is_confirmed():
     results = secrets._scan("x.js", 'const k = "AKIAIOSFODNN7EXAMPLE";')
@@ -96,7 +96,7 @@ def test_duplicate_matches_reported_once():
     assert len(results) == 1
 
 
-# ── end to end against a server ───────────────────────────────────────────
+# --- end to end against a server ---
 
 def test_run_fetches_linked_scripts(server, session):
     routes = Routes()

@@ -6,7 +6,7 @@ from reconfirm.net import BudgetExhausted, OutOfScope, Scope, Session
 from tests.conftest import Routes
 
 
-# ── scope ─────────────────────────────────────────────────────────────────
+# --- scope ---
 
 @pytest.mark.parametrize("host, inside", [
     ("example.com", True),
@@ -25,8 +25,7 @@ def test_scope_matches_on_label_boundaries(host, inside):
 
 
 def test_out_of_scope_raises_rather_than_returning_an_error():
-    # A scope violation is a bug, not a result — it must not be swallowed into
-    # an "unverified" and reported as though the host were tested.
+    # A scope violation is a bug, not a result.
     session = Session(Scope(["example.com"]), min_interval=0.0)
     with pytest.raises(OutOfScope):
         session.get("https://evil.net/")
@@ -50,7 +49,7 @@ def test_transport_failure_returns_an_error_not_an_exception():
     assert error
 
 
-# ── catch-all detection ───────────────────────────────────────────────────
+# --- catch-all detection ---
 
 def test_catchall_detected_when_every_path_returns_200(server, session):
     routes = Routes().set_catchall("<html><body>app shell</body></html>")

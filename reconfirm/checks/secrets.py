@@ -109,10 +109,7 @@ def redact(value):
 
 
 def classify_value(value):
-    """Decide whether a captured value can support a claim.
-
-    Returns (ok, reason); the reason becomes the DISCARDED reason verbatim.
-    """
+    """Decide whether a captured value can support a claim."""
     value = (value or "").strip()
     if not value:
         return False, "the matched assignment has an empty value"
@@ -137,7 +134,6 @@ def classify_value(value):
 
 
 def _collect_sources(session, host):
-    """Return ([(url, content)], error) for the page and the scripts it loads."""
     origin, response, error = fetch_site(session, host, allow_redirects=True)
     if response is None:
         return [], error

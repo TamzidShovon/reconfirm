@@ -13,7 +13,6 @@ PACKAGE = pathlib.Path(__file__).resolve().parent.parent / "reconfirm"
 
 
 def _docstring_nodes(tree):
-    """Every string node that serves as a docstring, by identity."""
     found = set()
     for node in ast.walk(tree):
         if not isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):

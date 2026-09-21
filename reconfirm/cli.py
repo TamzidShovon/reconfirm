@@ -20,7 +20,6 @@ _RESOLVER_WORKERS = 16
 
 
 def _print_addresses(host_addresses):
-    """Print the host-to-address table, grouped so shared hosting is visible."""
     by_address = {}
     for host, found in host_addresses.items():
         by_address.setdefault(",".join(found) or "-", []).append(host)
@@ -38,7 +37,6 @@ def _print_addresses(host_addresses):
 
 
 def _partition_by_resolution(hosts):
-    """Split hosts into (resolves, does not), preserving order."""
     with ThreadPoolExecutor(max_workers=_RESOLVER_WORKERS) as pool:
         flags = list(pool.map(resolves, hosts))
     live = [h for h, ok in zip(hosts, flags) if ok]

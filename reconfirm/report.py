@@ -30,11 +30,6 @@ def _use_color(stream):
 
 
 def _wrap(text, width, indent, hanging=None):
-    """Minimal greedy wrapper.
-
-    `hanging` is the continuation indent, defaulting to `indent`’s width so a
-    marker like "-> " appears once.
-    """
     if hanging is None:
         hanging = " " * len(indent)
     lines, current = [], indent

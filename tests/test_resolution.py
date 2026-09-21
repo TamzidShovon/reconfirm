@@ -46,7 +46,7 @@ def test_short_error_handles_none():
     assert short_error(None) == ""
 
 
-# ── grading ───────────────────────────────────────────────────────────────
+# --- grading ---
 
 @pytest.fixture
 def session():

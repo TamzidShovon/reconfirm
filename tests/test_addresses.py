@@ -1,6 +1,4 @@
-"""
-Address lookup, caching, and the --ip surface.
-"""
+"""Address lookup, caching, and the --ip surface."""
 
 import io
 import json
@@ -102,7 +100,7 @@ def test_clearing_the_cache_forces_a_fresh_lookup(monkeypatch):
     assert len(calls) == 2
 
 
-# ── CLI surface ───────────────────────────────────────────────────────────
+# --- CLI surface ---
 
 @pytest.mark.parametrize("flag", ["-ip", "--ip"])
 @pytest.mark.parametrize("command", ["enumerate", "scan"])
@@ -135,7 +133,7 @@ def test_address_table_is_ascii(capsys):
     capsys.readouterr().out.encode("cp1252")
 
 
-# ── JSON ──────────────────────────────────────────────────────────────────
+# --- JSON ---
 
 def test_addresses_absent_from_json_when_not_requested():
     payload = report.to_json([confirmed("c", "t", "s", "e")], "example.com")

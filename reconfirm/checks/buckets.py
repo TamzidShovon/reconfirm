@@ -51,7 +51,6 @@ SECOND_LEVEL_REGISTRIES = {"co", "com", "net", "org", "edu", "gov", "ac", "or", 
 
 
 def _registrable_labels(domain):
-    """The domain's labels with its public suffix removed."""
     labels = domain.rstrip(".").lower().split(".")
     if len(labels) >= 3 and len(labels[-1]) == 2 and labels[-2] in SECOND_LEVEL_REGISTRIES:
         return labels[:-2], labels[-2:]
@@ -59,11 +58,7 @@ def _registrable_labels(domain):
 
 
 def organisation_name(domain):
-    """The most owner-like label in a domain.
-
-    `cdn.district.in` -> `district`. Falls back to the first label when every
-    label is generic.
-    """
+    """The most owner-like label in a domain."""
     labels, _suffix = _registrable_labels(domain)
     meaningful = [l for l in labels if l not in GENERIC_LABELS]
     if meaningful:
@@ -84,10 +79,6 @@ def candidates(domain):
 
 
 def _ownership(keys, domain):
-    """Decide whether file keys evidence the target's ownership.
-
-    Returns (state, reason).
-    """
     if not keys:
         return "empty", (
             "the bucket is listable but empty, so nothing evidences who owns it - "

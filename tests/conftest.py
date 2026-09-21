@@ -13,10 +13,7 @@ from reconfirm.net import Scope, Session
 
 
 class Routes:
-    """Response table for the test server.
-
-    `catchall` answers any path with no explicit route, as a SPA or WAF does.
-    """
+    """Response table for the test server."""
 
     def __init__(self):
         self.paths = {}
@@ -77,7 +74,6 @@ def session():
 
 @pytest.fixture(autouse=True)
 def _clear_dns_cache():
-    """Resolution is cached module-wide, so clear it between tests."""
     from reconfirm.net import clear_lookup_cache
 
     clear_lookup_cache()
