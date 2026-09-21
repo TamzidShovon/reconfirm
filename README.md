@@ -87,6 +87,47 @@ shell conditionals. Unverified results deliberately do not trip it.
 | `secrets` | Credential material in served JavaScript, separating self-evidencing formats from contextual assignments that have to earn the claim |
 | `buckets` | Publicly listable S3 and GCS buckets, with ownership evidenced by the file keys inside |
 
+## Maturity
+
+Version 0.1. Here is exactly what has and has not been validated, because a
+tool that argues about the difference between proven and plausible should
+apply that to its own claims.
+
+**`secrets` — validated against real-world content.** Run over the 93KB
+minified jQuery bundle served by a live site, it produced zero results.
+With an `AKIA…` key appended to that same bundle it confirmed the key and
+redacted it; with `apiKey: "changeme"` appended it discarded the match and
+named the placeholder. Minified code is where naive entropy scanners light
+up, so the zero matters as much as the catch.
+
+**`buckets` — live path exercised, never a positive.** It has run against
+real S3 and GCS endpoints across 51 candidate names per target. The
+ownership rule that decides confirmed-versus-discarded is unit tested, but
+no run has yet found a listable bucket, so that branch has never executed
+against a real one.
+
+**`takeover` — synthetic only.** It fires correctly against a local server
+serving a provider's unclaimed-instance page, and correctly discards the
+same marker coming from a catch-all host. It has not yet encountered a real
+dangling CNAME. Treat its detection rate as unmeasured.
+
+Scan record so far: seven live targets, zero confirmed findings. Six of
+those were deliberately-vulnerable teaching applications — Juice Shop,
+Gruyere, AltoroMutual, the vulnweb family — which are built to demonstrate
+SQL injection, XSS and broken authentication. None of those is something
+this tool tests for, so finding nothing there is the correct result rather
+than a miss. Two of them serve no JavaScript at all.
+
+What it does not test, deliberately: injection, traversal, authentication,
+access control. Confirming any of those needs an out-of-band observer or a
+second authenticated session, and a check that cannot confirm its own
+result does not belong in a tool built on this premise.
+
+The reporting and host-selection layers are the hardened parts, because
+running the tool against real targets is what shook the bugs out of them —
+scope filtering, DNS grading, console encoding and budget allocation all
+had defects that only live traffic exposed. The commit history has them.
+
 ## How it decides
 
 The reasoning is written up in [docs/CONFIDENCE.md](docs/CONFIDENCE.md), which
