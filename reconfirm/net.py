@@ -20,6 +20,7 @@ finding from a host that says yes to everything.
 """
 
 import random
+import socket
 import string
 import time
 from urllib.parse import urlparse
@@ -197,6 +198,58 @@ class Session:
 
     def requests_made(self):
         return dict(self._host_counts)
+
+
+def resolves(host):
+    """Whether DNS has any address record for this name.
+
+    Worth a dedicated call because NXDOMAIN is the one transport failure that
+    is not ambiguous. A timeout, a reset and a refused connection all leave
+    open whether something is there; a name that does not resolve has nothing
+    behind it to test, which is positive disproof and belongs in DISCARDED
+    rather than inflating the unverified pile the tool exists to keep small.
+
+    Enumerating an archive routinely yields names retired years ago, so this
+    is the common case, not an edge one.
+    """
+    name = hostname_of(host)
+    if not name:
+        return False
+    try:
+        socket.getaddrinfo(name, None)
+        return True
+    except socket.gaierror:
+        return False
+    except Exception:
+        # Anything else (a resolver hiccup, a permission error) is ambiguous
+        # and must not be reported as "this name does not exist".
+        return True
+
+
+def short_error(error):
+    """Condense a transport error to something a report can print.
+
+    requests wraps urllib3 which wraps the original exception, so a DNS
+    failure arrives as ~300 characters of nested repr with the pool, the URL
+    and the retry count in it. None of that helps the reader decide anything.
+    """
+    text = str(error or "").strip()
+    lowered = text.lower()
+    for needle, plain in (
+        ("nameresolution", "DNS did not resolve the name"),
+        ("getaddrinfo", "DNS did not resolve the name"),
+        ("connecttimeout", "connection timed out"),
+        ("readtimeout", "the server accepted the connection then sent nothing"),
+        ("timeout", "the request timed out"),
+        ("sslerror", "the TLS handshake failed"),
+        ("certificate", "the TLS certificate was rejected"),
+        ("connectionrefused", "the connection was refused"),
+        ("connectionreset", "the server reset the connection"),
+        ("toomanyredirects", "the server redirected in a loop"),
+    ):
+        if needle in lowered.replace(" ", "").replace("_", ""):
+            return plain
+    return text[:140]
 
 
 def fetch_site(session, host, **kw):

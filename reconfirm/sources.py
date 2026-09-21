@@ -102,7 +102,12 @@ def enumerate_hosts(session, domain, use_wayback=True, emit=None):
     that admits it.
     """
     emit = emit or (lambda _msg: None)
-    candidates = set()
+    # The target's own domain is a host of the target by definition, and it is
+    # not discovered — it was given. Seeding it means a source outage degrades
+    # the run to "checked the apex only" instead of silently checking nothing:
+    # both crt.sh and the Wayback Machine being down at once is not rare, and
+    # a scan that probes zero hosts and exits 0 reads exactly like a clean one.
+    candidates = {domain.lower().strip().rstrip(".")}
     notes = []
 
     emit("querying certificate transparency")

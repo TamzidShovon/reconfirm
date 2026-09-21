@@ -1,0 +1,96 @@
+"""
+DNS resolution as a grading input, and error condensing.
+
+A live run against a real target produced 22 unverified results, 12 of them
+names that no longer resolve at all. NXDOMAIN is the one transport failure
+that is not ambiguous, so grading it as unverified inflated exactly the pile
+this tool exists to keep small — and each entry carried ~300 characters of
+nested urllib3 repr as its reason.
+"""
+
+import pytest
+
+from reconfirm.checks import Target, secrets, takeover
+from reconfirm.confidence import DISCARDED, UNVERIFIED
+from reconfirm.net import Scope, Session, resolves, short_error
+
+# Reserved by RFC 2606 to never resolve.
+DEAD_HOST = "nonexistent-subdomain-for-tests.invalid"
+
+
+def test_loopback_resolves():
+    assert resolves("127.0.0.1")
+
+
+def test_invalid_tld_does_not_resolve():
+    assert not resolves(DEAD_HOST)
+
+
+def test_resolution_ignores_a_port():
+    assert resolves("127.0.0.1:8080")
+
+
+def test_empty_host_does_not_resolve():
+    assert not resolves("")
+
+
+@pytest.mark.parametrize("raw, expected", [
+    ("ConnectionError: HTTPConnectionPool(host='x', port=80): Max retries exceeded "
+     "with url: / (Caused by NameResolutionError(...getaddrinfo failed))",
+     "DNS did not resolve the name"),
+    ("ConnectTimeout: timed out", "connection timed out"),
+    ("SSLError: certificate verify failed", "the TLS handshake failed"),
+    ("ConnectionError: [Errno 111] Connection refused", "the connection was refused"),
+])
+def test_short_error_condenses_known_causes(raw, expected):
+    assert short_error(raw) == expected
+
+
+def test_short_error_truncates_anything_unrecognised():
+    assert len(short_error("x" * 500)) <= 140
+
+
+def test_short_error_handles_none():
+    assert short_error(None) == ""
+
+
+# ── grading ───────────────────────────────────────────────────────────────
+
+@pytest.fixture
+def session():
+    return Session(Scope(["invalid"]), min_interval=0.0, timeout=2)
+
+
+def test_takeover_discards_a_name_that_does_not_resolve(session):
+    results = takeover.run(session, Target(domain="invalid", hosts=[DEAD_HOST]))
+    assert [r.state for r in results] == [DISCARDED]
+    assert "no address record" in results[0].reason
+
+
+def test_secrets_discards_a_name_that_does_not_resolve(session):
+    results = secrets.run(session, Target(domain="invalid", hosts=[DEAD_HOST]))
+    assert [r.state for r in results] == [DISCARDED]
+
+
+def test_a_dead_name_costs_no_requests(session):
+    # The point of checking DNS first: an unresolvable host should not consume
+    # the per-host budget on two doomed connection attempts.
+    takeover.run(session, Target(domain="invalid", hosts=[DEAD_HOST]))
+    assert session.requests_made() == {}
+
+
+def test_clean_host_is_reported_rather_than_omitted(server, session):
+    from tests.conftest import Routes
+
+    routes = Routes()
+    routes.add("/", '<html><script src="/app.js"></script></html>')
+    routes.add("/app.js", "var greeting = 'hello';", ctype="application/javascript")
+    origin = server(routes)
+
+    local = Session(Scope(["127.0.0.1"]), min_interval=0.0, timeout=5)
+    results = secrets.run(local, Target(domain="127.0.0.1", hosts=[origin.split("//")[1]]))
+
+    # Scanned and clean must be visible, not silently absent.
+    assert len(results) == 1
+    assert results[0].state == DISCARDED
+    assert "no credential material" in results[0].summary

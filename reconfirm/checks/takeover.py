@@ -20,7 +20,7 @@ NAME = "takeover"
 DESCRIPTION = "hosts serving a provider's unclaimed-instance page"
 
 from ..confidence import confirmed, discarded, inconclusive, unverified
-from ..net import BudgetExhausted, OutOfScope, fetch_site
+from ..net import BudgetExhausted, OutOfScope, fetch_site, resolves, short_error
 
 # Each entry is (marker, service). Markers are the literal text these services
 # serve for a name they do not host. They are matched case-insensitively
@@ -55,6 +55,18 @@ def run(session, target, emit=None):
     results = []
 
     for host in target.hosts:
+        if not resolves(host):
+            # No DNS record at all, so there is no dangling CNAME and nothing
+            # to claim. Definitive, unlike the failures handled below.
+            results.append(
+                discarded(
+                    NAME, host, "name does not resolve",
+                    "DNS has no address record for this name, so nothing is pointed "
+                    "anywhere and there is no host to test",
+                )
+            )
+            continue
+
         try:
             url, response, error = fetch_site(session, host, allow_redirects=True)
         except OutOfScope as e:
@@ -69,19 +81,27 @@ def run(session, target, emit=None):
             # outcome of enumerating a CT log, and it is genuinely ambiguous:
             # a dead A record and a dangling CNAME to a dead provider look
             # identical from here. It stays unverified.
+            # The name resolves but nothing answered. Genuinely ambiguous: a
+            # firewalled host and a dead one look identical from here.
             results.append(
-                unverified(NAME, host, "host did not respond", "no response over HTTPS or HTTP - %s" % error)
+                unverified(
+                    NAME, host, "host did not respond",
+                    "the name resolves but neither HTTPS nor HTTP answered - %s"
+                    % short_error(error),
+                )
             )
             continue
 
         body = response.text[:_BODY_WINDOW]
         lowered = body.lower()
+        matched = False
 
         for marker, service in FINGERPRINTS:
             index = lowered.find(marker.lower())
             if index == -1:
                 continue
 
+            matched = True
             if session.is_catchall_response(url, response):
                 results.append(
                     discarded(
@@ -104,5 +124,20 @@ def run(session, target, emit=None):
             )
             emit("  %s -> %s" % (host, service))
             break
+
+        if not matched:
+            # A host that answered and matched no provider marker was checked
+            # and is clean. Omitting it would make "checked, nothing found"
+            # indistinguishable from "never checked", which is the confusion
+            # this whole package is built to prevent.
+            results.append(
+                discarded(
+                    NAME, url,
+                    "responded, no provider unclaimed-instance marker",
+                    "all %d provider fingerprints were tested against the first "
+                    "%d bytes of the response and none matched"
+                    % (len(FINGERPRINTS), _BODY_WINDOW),
+                )
+            )
 
     return results

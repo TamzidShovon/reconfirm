@@ -85,6 +85,16 @@ def cmd_scan(args):
     emit("probing %d hosts with %d check(s), %.1fs between requests"
          % (len(hosts), len(modules), args.delay))
 
+    if not hosts:
+        # Reaching here means even the seeded apex was filtered out, so the
+        # run is about to report nothing having tested nothing. Say so: an
+        # empty result set that looks identical to a clean one is the failure
+        # this tool exists to avoid.
+        notes.append(
+            "no hosts were probed, so these results say nothing about the target -- "
+            "check the domain and whether the passive sources returned anything"
+        )
+
     results = []
     for module in modules:
         emit("running %s - %s" % (module.NAME, module.DESCRIPTION))

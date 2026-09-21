@@ -137,6 +137,7 @@ def run(session, target, emit=None):
     emit = emit or (lambda _msg: None)
     results = []
     domain = target.domain
+    probed = 0
 
     for name in candidates(domain):
         for provider, template in PROVIDERS:
@@ -145,6 +146,7 @@ def run(session, target, emit=None):
             # Storage endpoints belong to the cloud provider, not the target,
             # so they are fetched outside the scope rail by design.
             response, error = session.get_external(url, timeout=6)
+            probed += 1
             if response is None:
                 results.append(
                     inconclusive(NAME, url, "%s bucket %r not checked" % (provider, name), error)
@@ -196,5 +198,20 @@ def run(session, target, emit=None):
                         reason,
                     )
                 )
+
+    if not results and probed:
+        # Nothing answered as a listable bucket. Worth stating: this check
+        # guesses at names, so "found nothing" is a statement about the names
+        # it guessed, not about the target's storage generally.
+        results.append(
+            discarded(
+                NAME, domain,
+                "no listable bucket under %d guessed names" % probed,
+                "names were derived from %r across %d providers; none returned a "
+                "public listing, which says nothing about buckets under names this "
+                "check does not guess"
+                % (organisation_name(domain), len(PROVIDERS)),
+            )
+        )
 
     return results

@@ -38,7 +38,7 @@ import re
 from urllib.parse import urljoin
 
 from ..confidence import confirmed, discarded, inconclusive, unverified
-from ..net import BudgetExhausted, OutOfScope, fetch_site
+from ..net import BudgetExhausted, OutOfScope, fetch_site, resolves, short_error
 
 # Self-evidencing formats. The match is the finding: nothing else looks like
 # this, so there is nothing further to validate.
@@ -270,6 +270,16 @@ def run(session, target, emit=None):
     results = []
 
     for host in target.hosts:
+        if not resolves(host):
+            results.append(
+                discarded(
+                    NAME, host, "name does not resolve",
+                    "DNS has no address record for this name, so there is nothing "
+                    "serving scripts to scan",
+                )
+            )
+            continue
+
         try:
             sources, error = _collect_sources(session, host)
         except OutOfScope as e:
@@ -285,15 +295,31 @@ def run(session, target, emit=None):
                     NAME,
                     host,
                     "no scripts retrieved",
-                    error or "the page served no inline or linked scripts",
+                    short_error(error) if error
+                    else "the page served no inline or linked scripts",
                 )
             )
             continue
 
+        found = []
         for source_url, content in sources:
-            found = _scan(source_url, content)
-            if found:
-                emit("  %s: %d match(es)" % (source_url, len(found)))
-            results.extend(found)
+            hits = _scan(source_url, content)
+            if hits:
+                emit("  %s: %d match(es)" % (source_url, len(hits)))
+            found.extend(hits)
+
+        if not found:
+            # Without this, a host whose scripts were fetched and scanned
+            # clean is absent from the report, and absent looks identical to
+            # never checked. Saying so is the whole premise of the tool.
+            results.append(
+                discarded(
+                    NAME, host,
+                    "scanned %d script source(s), no credential material" % len(sources),
+                    "every pattern was tested against the retrieved scripts and "
+                    "nothing matched",
+                )
+            )
+        results.extend(found)
 
     return results
