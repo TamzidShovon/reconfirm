@@ -124,11 +124,11 @@ shared hosting obvious at a glance:
 ```
 ADDRESSES  (3 hosts on 2 distinct address sets)
 ----------------------------------------------------
-  50.116.1.184
-      nmap.org
-      www.nmap.org
-  45.33.32.156
-      scanme.nmap.org
+  192.0.2.10
+      example.com
+      www.example.com
+  192.0.2.44
+      api.example.com
 ```
 
 Several names on one address usually means one box or one load balancer
