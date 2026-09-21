@@ -39,11 +39,30 @@ scanner would have printed as a finding.
 ```bash
 git clone https://github.com/TamzidShovon/reconfirm
 cd reconfirm
-pip install -r requirements.txt
+python3 -m reconfirm --version
 ```
 
-Python 3.9+. The only dependency is `requests` — there are no Go binaries to
-install and nothing to put on `PATH`.
+Python 3.9+, and `requests` is the only dependency. Kali, Debian, Ubuntu and
+most distributions already ship it, so on a lot of machines the clone above is
+the whole installation — there is nothing to build, no Go binaries, and
+nothing to put on `PATH`.
+
+If that last command reports a missing module, pick one:
+
+```bash
+sudo apt install python3-requests          # Debian, Ubuntu, Kali
+```
+
+```bash
+python3 -m venv .venv                      # anywhere, no root needed
+source .venv/bin/activate                  # .venv\Scripts\activate on Windows
+pip install -e .
+```
+
+On Kali and current Debian, `pip install` outside a virtualenv fails with
+`externally-managed-environment` (PEP 668). That is the distribution
+protecting its own Python, not a problem with this package — use either
+option above rather than `--break-system-packages`.
 
 ## Use
 
@@ -162,9 +181,13 @@ Only run this against domains you are authorised to test.
 ## Tests
 
 ```bash
-pip install pytest
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
 python -m pytest tests/ -q
 ```
+
+Or, without a virtualenv: `sudo apt install python3-pytest` and run
+`python3 -m pytest tests/ -q`.
 
 130 tests. The checks are driven against a local HTTP server that serves the
 awkward cases — a catch-all answering 200 to every path, a bucket listing whose
