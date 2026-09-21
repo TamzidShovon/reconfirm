@@ -1,0 +1,48 @@
+name: tests
+
+# Cross-platform support is a claim, and claims in this repo are supposed to
+# come with evidence. Every bug this project has shipped was found by running
+# it somewhere new: a Windows console that could not encode an em dash, a Kali
+# box where pip refuses to install. A matrix is the cheapest way to keep
+# finding those before a user does.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.9", "3.11", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install
+        run: python -m pip install --upgrade pip && pip install -e ".[dev]"
+
+      - name: Run tests
+        run: python -m pytest tests/ -q
+
+      - name: Check the CLI starts and reports its own help
+        run: |
+          python -m reconfirm --version
+          python -m reconfirm scan --help
+
+      - name: Check output encodes on a legacy Windows console
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          chcp 1252
+          python -m reconfirm --version

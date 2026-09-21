@@ -2,6 +2,8 @@
 
 Attack-surface recon that grades its own findings.
 
+[![tests](https://github.com/TamzidShovon/reconfirm/actions/workflows/tests.yml/badge.svg)](https://github.com/TamzidShovon/reconfirm/actions/workflows/tests.yml)
+
 Most recon tools report in two states: found, or not found. That collapses "I
 proved this" and "I saw something that might be this" into one word, and the
 person reading the output has to pull them apart by hand. `reconfirm` reports
@@ -36,33 +38,49 @@ scanner would have printed as a finding.
 
 ## Install
 
+Python 3.9+ on Linux, macOS or Windows. `requests` is the only dependency,
+there is nothing to build, no Go binaries, and nothing to put on `PATH`.
+
+**Linux / macOS**
+
 ```bash
 git clone https://github.com/TamzidShovon/reconfirm
 cd reconfirm
 python3 -m reconfirm --version
 ```
 
-Python 3.9+, and `requests` is the only dependency. Kali, Debian, Ubuntu and
-most distributions already ship it, so on a lot of machines the clone above is
-the whole installation — there is nothing to build, no Go binaries, and
-nothing to put on `PATH`.
+**Windows** (PowerShell or cmd)
 
-If that last command reports a missing module, pick one:
+```powershell
+git clone https://github.com/TamzidShovon/reconfirm
+cd reconfirm
+python -m reconfirm --version
+```
+
+Kali, Debian, Ubuntu and most distributions already ship `python3-requests`,
+so on a lot of machines the clone above is the whole installation. If that
+last command reports a missing module, pick one:
 
 ```bash
 sudo apt install python3-requests          # Debian, Ubuntu, Kali
 ```
 
 ```bash
-python3 -m venv .venv                      # anywhere, no root needed
-source .venv/bin/activate                  # .venv\Scripts\activate on Windows
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e .
+```
+
+```powershell
+python -m venv .venv; .venv\Scripts\Activate.ps1
 pip install -e .
 ```
 
 On Kali and current Debian, `pip install` outside a virtualenv fails with
 `externally-managed-environment` (PEP 668). That is the distribution
-protecting its own Python, not a problem with this package — use either
-option above rather than `--break-system-packages`.
+protecting its own Python, not a problem with this package — use `apt` or a
+virtualenv rather than `--break-system-packages`.
+
+Examples below use `python`. On Linux and macOS that is often `python3`.
 
 ## Use
 
@@ -186,8 +204,12 @@ pip install -e ".[dev]"
 python -m pytest tests/ -q
 ```
 
-Or, without a virtualenv: `sudo apt install python3-pytest` and run
-`python3 -m pytest tests/ -q`.
+Without a virtualenv on Debian or Kali: `sudo apt install python3-pytest`,
+then `python3 -m pytest tests/ -q`.
+
+CI runs the suite on Linux, macOS and Windows against Python 3.9, 3.11 and
+3.13, and additionally starts the CLI under a cp1252 Windows console -- the
+console that broke this tool's output twice.
 
 130 tests. The checks are driven against a local HTTP server that serves the
 awkward cases — a catch-all answering 200 to every path, a bucket listing whose

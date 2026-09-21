@@ -1,0 +1,11 @@
+# Normalise line endings in the repository so a clone is identical on every
+# platform and diffs never turn into whole-file rewrites.
+* text=auto eol=lf
+
+# Windows-native scripts must keep CRLF to run.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+*.png binary
+*.jpg binary
+*.gz  binary

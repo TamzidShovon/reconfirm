@@ -64,3 +64,27 @@ def test_partition_preserves_order():
 
     live, _dead = _partition_by_resolution(["127.0.0.1", "localhost"])
     assert live == ["127.0.0.1", "localhost"]
+
+
+def test_hosts_file_with_a_utf8_bom_is_read_correctly(tmp_path):
+    # Notepad and PowerShell's Out-File both write a BOM. Read as plain utf-8
+    # the first line arrives as "﻿example.com", fails the scope check and
+    # disappears without a word.
+    path = tmp_path / "hosts.txt"
+    path.write_bytes(b"\xef\xbb\xbfapi.example.com\r\nwww.example.com\r\n")
+
+    with open(path, encoding="utf-8-sig") as fh:
+        hosts = [line.strip() for line in fh if line.strip()]
+
+    assert hosts == ["api.example.com", "www.example.com"]
+    assert hosts[0] in Scope(["example.com"])
+
+
+def test_hosts_file_without_a_bom_is_unaffected(tmp_path):
+    path = tmp_path / "hosts.txt"
+    path.write_bytes(b"api.example.com\nwww.example.com\n")
+
+    with open(path, encoding="utf-8-sig") as fh:
+        hosts = [line.strip() for line in fh if line.strip()]
+
+    assert hosts == ["api.example.com", "www.example.com"]

@@ -77,7 +77,12 @@ def cmd_scan(args):
         return 2
 
     if args.hosts_from:
-        with open(args.hosts_from, encoding="utf-8") as fh:
+        # utf-8-sig, not utf-8: Notepad and PowerShell's Out-File write a BOM,
+        # and plain utf-8 keeps it, so the first hostname arrives as
+        # "﻿example.com". That fails the scope check and is dropped
+        # silently -- the first host in a Windows-authored file just vanishes.
+        # The codec is a no-op on files without a BOM.
+        with open(args.hosts_from, encoding="utf-8-sig") as fh:
             hosts = [line.strip() for line in fh if line.strip()]
         notes = []
         emit("%d hostnames read from %s" % (len(hosts), args.hosts_from))
