@@ -1,9 +1,4 @@
-"""
-The value-classification rules, and the scan built on them.
-
-Each rejection case below is a false positive that a plain regex scanner
-reports as a finding.
-"""
+"""Value classification, and the scan built on it."""
 
 import pytest
 
@@ -30,11 +25,8 @@ def test_rejected_values(value, fragment):
     assert fragment in reason
 
 
-# Synthetic values, not real vendor test keys. A published example key still
-# matches its vendor's format, so committing one trips secret-scanning push
-# protection and teaches anyone reading the suite that checking in
-# credential-shaped strings is fine. These carry the same length and entropy
-# without matching any issuer's pattern.
+# Synthetic, not real vendor test keys: a published example key still
+# matches its vendor's format and trips secret-scanning push protection.
 @pytest.mark.parametrize("value", [
     "Kp7mQ2xR9vT4wZ8nB3cF6hJ1",
     "f4c3b2a1908d7e6f5a4b3c2d1e0f9a8b",
@@ -73,15 +65,13 @@ def test_placeholder_assignment_is_discarded_with_the_reason():
 
 
 def test_empty_assignment_is_discarded_not_reported_as_a_secret():
-    # The bug this rule exists for: matching the whole assignment text and
-    # reporting it as though the text were the secret.
+    # Matching the whole assignment and reporting the text as the secret.
     results = secrets._scan("x.js", 'const rss2jsonApiKey = "";')
     assert all(r.state == DISCARDED for r in results)
 
 
 def test_bare_pem_header_is_not_confirmed():
-    # A header with no key material behind it is what key-handling code and
-    # masked-display components contain.
+    # Key-handling code contains the header with no key material behind it.
     content = 'const PREFIX = "-----BEGIN PRIVATE KEY-----";'
     assert secrets._scan("x.js", content) == []
 

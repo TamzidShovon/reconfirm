@@ -1,12 +1,4 @@
-"""
-DNS resolution as a grading input, and error condensing.
-
-A live run against a real target produced 22 unverified results, 12 of them
-names that no longer resolve at all. NXDOMAIN is the one transport failure
-that is not ambiguous, so grading it as unverified inflated exactly the pile
-this tool exists to keep small — and each entry carried ~300 characters of
-nested urllib3 repr as its reason.
-"""
+"""DNS resolution as a grading input, and error condensing."""
 
 import pytest
 
@@ -73,8 +65,7 @@ def test_secrets_discards_a_name_that_does_not_resolve(session):
 
 
 def test_a_dead_name_costs_no_requests(session):
-    # The point of checking DNS first: an unresolvable host should not consume
-    # the per-host budget on two doomed connection attempts.
+    # An unresolvable host should not spend budget on doomed attempts.
     takeover.run(session, Target(domain="invalid", hosts=[DEAD_HOST]))
     assert session.requests_made() == {}
 
@@ -90,15 +81,14 @@ def test_clean_host_is_reported_rather_than_omitted(server, session):
     local = Session(Scope(["127.0.0.1"]), min_interval=0.0, timeout=5)
     results = secrets.run(local, Target(domain="127.0.0.1", hosts=[origin.split("//")[1]]))
 
-    # Scanned and clean must be visible, not silently absent.
+    # Scanned-and-clean must be visible, not silently absent.
     assert len(results) == 1
     assert results[0].state == DISCARDED
     assert "no credential material" in results[0].summary
 
 
 def test_temporary_resolver_failure_is_not_treated_as_nxdomain(monkeypatch):
-    # EAI_AGAIN means "ask again", not "no such name". Treating it as NXDOMAIN
-    # silently drops a live host from the scan.
+    # EAI_AGAIN means "ask again", not "no such name".
     import socket as _socket
 
     from reconfirm import net

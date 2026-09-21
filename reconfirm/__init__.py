@@ -1,4 +1,4 @@
-"""reconfirm — attack-surface recon that grades its own findings."""
+"""reconfirm - attack-surface recon that grades its own findings."""
 
 __version__ = "0.1.0"
 

@@ -1,10 +1,4 @@
-"""
-Name derivation and the ownership rule.
-
-The ownership rule is the reason this check exists in the form it does, so it
-is tested as a pure function rather than only through HTTP — the rule should be
-readable and assertable without a network in the picture.
-"""
+"""Name derivation and the ownership rule."""
 
 import pytest
 
@@ -48,8 +42,7 @@ def test_keys_matching_the_org_name_prove_ownership():
 
 
 def test_empty_bucket_is_unproven_not_disproven():
-    # The asymmetry applied to ownership: an empty listing is not evidence
-    # that the bucket belongs to somebody else.
+    # An empty listing is not evidence the bucket belongs to someone else.
     state, reason = buckets._ownership([], "example.com")
     assert state == "empty"
     assert "nothing evidences who owns it" in reason

@@ -1,31 +1,13 @@
-"""
-The three states a result can hold, and the rules for reaching them.
+"""Result states and the rules for reaching them.
 
-Recon tooling almost universally reports in two states: found, or not found.
-That collapses two very different situations — "I proved this" and "I saw
-something that might be this but could not prove it" — into a single word, and
-the person reading the output has no way to pull them back apart. Most of the
-time wasted triaging a scanner's results comes from that collapse.
-
-So there are three states here, and one deliberate asymmetry between them:
-
-    CONFIRMED   an independent check produced evidence supporting the claim
-    UNVERIFIED  the claim is plausible; the check meant to prove it was
-                inconclusive
+    CONFIRMED   an independent check produced supporting evidence
+    UNVERIFIED  plausible, but the check meant to prove it was inconclusive
     DISCARDED   a check actively disproved the claim
 
-The asymmetry: an inconclusive outcome always resolves to UNVERIFIED, never to
-DISCARDED. A timeout, a connection reset, a WAF block and a rate-limit all
-present as "no evidence found", and treating absent evidence as evidence of
-absence is precisely how a scanner silently drops the one real result in a run.
-DISCARDED is reserved for claims positively shown to be false — a secret whose
-value is a known placeholder, a response byte-identical to the host's catch-all.
+Inconclusive outcomes resolve to UNVERIFIED, never DISCARDED. CONFIRMED
+requires evidence, enforced in Result.__post_init__.
 
-CONFIRMED additionally requires evidence to be present, and Result enforces
-that in __post_init__ rather than trusting the caller. A "confirmed" with
-nothing behind it is the exact failure this module exists to prevent, and a
-check that forgets to attach its evidence should fail loudly during its own
-tests rather than quietly emit an unsupported claim.
+See docs/CONFIDENCE.md for the rationale.
 """
 
 from dataclasses import dataclass
@@ -36,17 +18,15 @@ DISCARDED = "discarded"
 
 STATES = (CONFIRMED, UNVERIFIED, DISCARDED)
 
-# Sort order for output: what you can act on first, what was ruled out last.
+# Actionable first, ruled out last.
 RANK = {CONFIRMED: 0, UNVERIFIED: 1, DISCARDED: 2}
 
-# Evidence is quoted verbatim into reports, so it is capped. 600 chars is
-# enough for a bucket listing or a cert SAN block without turning a JSON
-# report into a copy of the target's homepage.
+# Evidence is quoted verbatim into reports, so it is capped.
 MAX_EVIDENCE = 600
 
 
 class ConfidenceError(ValueError):
-    """Raised when a Result violates the state rules — a bug in a check."""
+    """Raised when a Result violates the state rules."""
 
 
 @dataclass
@@ -100,12 +80,7 @@ def discarded(check, target, summary, reason):
 
 
 def inconclusive(check, target, summary, error):
-    """A check that could not complete.
-
-    Exists so the asymmetry is something a check calls by name instead of
-    something it has to remember. Anywhere a check catches an exception or
-    reads a transport error, this is the correct exit.
-    """
+    """A check that could not complete. Resolves to UNVERIFIED."""
     if isinstance(error, BaseException):
         error = "%s: %s" % (type(error).__name__, error)
     return unverified(check, target, summary, "could not complete check - %s" % error)

@@ -1,12 +1,4 @@
-"""
-Enumeration, and what it does when its sources fail.
-
-The seeding rule exists because of a live run where crt.sh answered 502 and
-the Wayback Machine answered 503 at the same moment. Enumeration returned an
-empty list, so nothing was probed, and the run printed "0 confirmed, 0
-unverified, 0 discarded" and exited 0 — a result indistinguishable from
-a target with nothing wrong with it.
-"""
+"""Enumeration, and what it does when its sources fail."""
 
 from reconfirm import sources
 
@@ -99,14 +91,13 @@ def test_wayback_can_be_skipped():
 
 
 def test_concatenation_artifacts_are_rejected():
-    # Came out of a real Wayback query for vulnweb.com.
+    # Observed in a real Wayback query.
     assert sources._clean("testasp.vulnweb.comtestasp.vulnweb.com", "vulnweb.com") is None
 
 
 def test_encoding_artifacts_are_left_to_dns_not_guessed_at():
-    # "2ftestphp" is %2f + a label, and junk. "2fa" is a real subdomain. No
-    # pattern separates them, so _clean passes both through and the caller
-    # resolves them; see cli._partition_by_resolution.
+    # "2ftestphp" is %2f + a label; "2fa" is a real subdomain. No pattern
+    # separates them, so both pass through and the caller resolves them.
     assert sources._clean("2ftestphp.vulnweb.com", "vulnweb.com") == "2ftestphp.vulnweb.com"
     assert sources._clean("2fa.vulnweb.com", "vulnweb.com") == "2fa.vulnweb.com"
 

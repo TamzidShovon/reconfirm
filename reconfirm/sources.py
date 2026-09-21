@@ -1,16 +1,8 @@
-"""
-Passive sources of candidate hostnames.
+"""Passive sources of candidate hostnames.
 
-Nothing here touches the target. Certificate transparency logs and the Wayback
-Machine are third-party archives of things the target published; reading them
-generates no traffic the target can see, which is why enumeration runs first
-and separately from the checks that probe.
-
-Sources return candidates, never results. A hostname appearing in a CT log
-proves a certificate was issued, not that anything is running — plenty of
-entries are years-dead staging boxes. Deciding what is actually there is the
-checks' job, and keeping that boundary sharp is what stops "appeared in a log"
-from being reported as a finding, which is most of what generic OSINT tools do.
+Nothing here touches the target: certificate transparency and the Wayback
+Machine are third-party archives. Sources return candidates, never results;
+deciding what is actually there is the checks' job.
 """
 
 import json
@@ -41,23 +33,18 @@ def _clean(name, domain):
     # ("testasp.vulnweb.comtestasp.vulnweb.com"), never a real host.
     if name.count(domain) > 1:
         return None
-    # Archived URLs also yield labels built from percent-escapes -- "2ftestphp"
-    # from %2f, "25252fwww" from %25252f. There is deliberately no pattern
-    # here for those. The obvious rule, rejecting labels that open with an
-    # escape's hex tail, also rejects 2fa and 3d, which are ordinary
-    # subdomains. Guessing which names are real is the failure mode this whole
-    # package argues against, and the caller already resolves every name
-    # before probing it: junk does not resolve, and DNS is evidence rather
-    # than a heuristic.
+    # Percent-escape artifacts ("2ftestphp" from %2f) are deliberately not
+    # filtered here: the obvious rule also rejects 2fa and 3d, which are
+    # ordinary subdomains. The caller resolves every name before probing,
+    # and DNS is evidence rather than a heuristic.
     return name
 
 
 def from_certificates(session, domain, limit=500):
     """Subdomains from certificate transparency, via crt.sh.
 
-    crt.sh answers slowly and rate-limits aggressively; a failure here is
-    ordinary rather than exceptional, so it returns what it has along with a
-    note instead of raising. Returns (hostnames, note).
+    Returns (hostnames, note); a source failure is reported in the note
+    rather than raised.
     """
     r, err = session.get_external(CRTSH_URL.format(domain=domain), timeout=30)
     if r is None:
@@ -84,9 +71,8 @@ def from_certificates(session, domain, limit=500):
 def from_wayback(session, domain, limit=2000):
     """Subdomains seen in archived URLs.
 
-    Catches hosts whose certificates predate CT logging or were never
-    publicly logged, at the cost of being noisier and much more likely to be
-    long dead. Returns (hostnames, note).
+    Noisier than CT and far more likely to be long dead. Returns
+    (hostnames, note).
     """
     r, err = session.get_external(
         WAYBACK_URL.format(domain=domain, limit=limit), timeout=30
@@ -108,17 +94,12 @@ def from_wayback(session, domain, limit=2000):
 def enumerate_hosts(session, domain, use_wayback=True, emit=None):
     """Run every enabled source and merge the candidates.
 
-    Returns (hostnames, notes). Notes carry source failures so the report can
-    say "CT was rate-limited" rather than presenting a short list as though it
-    were complete — an enumeration that silently half-ran is worse than one
-    that admits it.
+    Returns (hostnames, notes). Notes carry source failures so a half-run
+    enumeration is not presented as a complete one.
     """
     emit = emit or (lambda _msg: None)
-    # The target's own domain is a host of the target by definition, and it is
-    # not discovered — it was given. Seeding it means a source outage degrades
-    # the run to "checked the apex only" instead of silently checking nothing:
-    # both crt.sh and the Wayback Machine being down at once is not rare, and
-    # a scan that probes zero hosts and exits 0 reads exactly like a clean one.
+    # The apex is given, not discovered. Seeding it means a source outage
+    # degrades to "checked the apex only" rather than checking nothing.
     candidates = {domain.lower().strip().rstrip(".")}
     notes = []
 

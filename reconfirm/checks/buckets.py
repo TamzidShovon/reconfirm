@@ -1,30 +1,9 @@
-"""
-Publicly listable cloud storage under names derived from the target.
+"""Publicly listable cloud storage under names derived from the target.
 
-The technique is guessing: take the organisation name, append the handful of
-suffixes everyone uses, and see which buckets answer. It works often enough to
-be worth doing and produces a specific, recurring false positive that most
-tools ship with.
-
-That false positive is ownership. Bucket namespaces are global and flat, so
-`dashboard`, `files` and `data` were claimed years ago by parties with no
-relation to the target. A tool that derives a candidate, finds it listable and
-reports it has proven only that *a* bucket by that name exists and is open —
-not that it belongs to the organisation being assessed. Reporting someone
-else's open bucket to a bug bounty programme is worse than reporting nothing.
-
-So ownership has to be evidenced, and the only evidence available is the file
-keys inside. If the listing contains keys referencing the target's domain or
-name, the bucket is theirs and the finding is CONFIRMED. If the listing is
-empty, nothing has been shown either way and it stays UNVERIFIED — an empty
-bucket is not disproof, and this is exactly the case where the asymmetry in
-confidence.py earns its keep. If the keys reference somebody else, ownership
-is positively disproven and the candidate is DISCARDED.
-
-Derivation matters for the same reason. Taking the first label of
-`dashboard.example.com` yields the candidate `dashboard`, which is why the
-generic-label list below exists: those labels describe a function, not an
-owner, and every one of them is a bucket somebody already owns.
+Bucket namespaces are global and flat, so a listable bucket matching a
+guessed name is not necessarily the target's. Ownership is evidenced by the
+file keys inside: keys referencing the target confirm it, foreign keys
+disprove it, and an empty bucket proves neither and stays unverified.
 """
 
 NAME = "buckets"
@@ -34,9 +13,8 @@ import re
 
 from ..confidence import confirmed, inconclusive, unverified, discarded
 
-# Subdomain labels that say nothing about who owns a domain. Deriving a
-# candidate from one of these produces a bucket name belonging to an unrelated
-# company far more often than not.
+# Labels that describe a function, not an owner. A candidate derived from
+# one of these usually belongs to an unrelated company.
 GENERIC_LABELS = {
     "sandbox", "app", "apps", "api", "dev", "www", "test", "staging", "stage",
     "prod", "production", "beta", "demo", "portal", "static", "assets", "cdn",
@@ -67,12 +45,8 @@ KEY_PATTERN = re.compile(r"<Key>([^<]+)</Key>")
 EVIDENCE_KEYS = 15
 
 
-# Registry labels that sit directly under a ccTLD, so that `acme.co.uk` is
-# read as one registrable domain rather than as a subdomain of `co.uk`. This
-# is a heuristic, not the Public Suffix List: the full list is a dependency
-# and a data file to keep current, and getting `co.uk` and `com.au` right
-# covers what this check actually needs. A miss costs a slightly wrong bucket
-# candidate, which the ownership rule then discards.
+# Registry labels sitting directly under a ccTLD, so `acme.co.uk` reads as
+# one registrable domain. A heuristic, not the Public Suffix List.
 SECOND_LEVEL_REGISTRIES = {"co", "com", "net", "org", "edu", "gov", "ac", "or", "ne", "gob"}
 
 
@@ -87,9 +61,8 @@ def _registrable_labels(domain):
 def organisation_name(domain):
     """The most owner-like label in a domain.
 
-    `cdn.district.in` -> `district`, not `cdn`. Falls back to the first label
-    when every label is generic, because a wrong guess that gets DISCARDED on
-    ownership is better than silently checking nothing.
+    `cdn.district.in` -> `district`. Falls back to the first label when every
+    label is generic.
     """
     labels, _suffix = _registrable_labels(domain)
     meaningful = [l for l in labels if l not in GENERIC_LABELS]
@@ -113,8 +86,7 @@ def candidates(domain):
 def _ownership(keys, domain):
     """Decide whether file keys evidence the target's ownership.
 
-    Returns (state, reason). Splitting this out keeps the rule readable and
-    lets the tests assert it directly without any HTTP.
+    Returns (state, reason).
     """
     if not keys:
         return "empty", (
@@ -143,8 +115,7 @@ def run(session, target, emit=None):
         for provider, template in PROVIDERS:
             url = template.format(name=name)
 
-            # Storage endpoints belong to the cloud provider, not the target,
-            # so they are fetched outside the scope rail by design.
+            # Storage endpoints belong to the provider, not the target.
             response, error = session.get_external(url, timeout=6)
             probed += 1
             if response is None:
@@ -200,9 +171,8 @@ def run(session, target, emit=None):
                 )
 
     if not results and probed:
-        # Nothing answered as a listable bucket. Worth stating: this check
-        # guesses at names, so "found nothing" is a statement about the names
-        # it guessed, not about the target's storage generally.
+        # This check guesses at names, so "found nothing" is a statement
+        # about the names guessed, not about the target's storage.
         results.append(
             discarded(
                 NAME, domain,

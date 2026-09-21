@@ -1,12 +1,4 @@
-"""
-Rendering, including the encoding constraint.
-
-The cp1252 test is a regression guard, not a style preference. A previous
-version of this tooling wrote an arrow character into its findings output and
-died with UnicodeEncodeError on the Windows console — after the scan had run.
-Losing results at the print step is an expensive way to learn that the default
-console encoding is not UTF-8.
-"""
+"""Rendering, including the ASCII output constraint."""
 
 import io
 import json

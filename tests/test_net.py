@@ -1,9 +1,4 @@
-"""
-The scope rail and catch-all detection.
-
-Scope is the rule that stops a bug in a check from generating traffic to a host
-nobody authorised, so it is tested as a hard boundary rather than a filter.
-"""
+"""The scope rail, request budgets, and catch-all detection."""
 
 import pytest
 
@@ -25,8 +20,7 @@ from tests.conftest import Routes
     ("", False),
 ])
 def test_scope_matches_on_label_boundaries(host, inside):
-    # "notexample.com" ending with "example.com" as a plain string is how a
-    # tool ends up probing a lookalike domain owned by somebody else.
+    # Plain suffix matching would place "notexample.com" inside it.
     assert (host in Scope(["example.com"])) is inside
 
 

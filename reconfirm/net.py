@@ -1,22 +1,9 @@
-"""
-HTTP plumbing shared by every check: scope enforcement, rate limiting, request
-budgets, and catch-all detection.
+"""HTTP plumbing shared by every check.
 
-Two of these are safety rails and two are correctness tools.
-
-Scope and budget are the rails. A recon tool aimed at the wrong host is at best
-rude and at worst illegal, so the target set is fixed before any check runs and
-a host that was never authorised cannot be reached even by a check with a bug
-in its URL construction. The per-host budget bounds how much traffic a single
-run can generate regardless of how many candidates the sources produced.
-
-Catch-all detection is the correctness tool, and it is the single highest-value
-routine in this package. A great many hosts answer 200 to literally any path —
-SPAs serving index.html on every route, CDNs with a friendly 404 page, WAFs
-returning a block page. Against those hosts, any check phrased as "did this
-path return 200?" reports every path it tried. Probing a path that cannot exist
-first, and comparing every later response against it, is what separates a real
-finding from a host that says yes to everything.
+Scope enforcement and per-host request budgets bound what a run can reach.
+Catch-all detection fingerprints how an origin answers a path that cannot
+exist, so checks can tell a real response from a host that returns 200 for
+everything.
 """
 
 import random
@@ -32,10 +19,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 USER_AGENT = "reconfirm/0.1 (+https://github.com/TamzidShovon/reconfirm)"
 
-# Below this, two responses of the same content type are treated as the same
-# page. Generous enough to absorb a CSRF token or a timestamp in the markup,
-# tight enough that a genuinely different document is never mistaken for the
-# catch-all.
+# Below this, two responses of the same content type are the same page.
 CATCHALL_SIZE_TOLERANCE = 250
 
 
@@ -53,15 +37,7 @@ def _canary_path():
 
 
 def hostname_of(host):
-    """The bare hostname from a `host`, `host:port` or `[v6]:port` string.
-
-    Scope checks happen in two places that disagreed about this: requests go
-    through urlparse, which drops the port, while a hostname read from
-    --hosts-from keeps whatever the file had. A `host:port` line therefore
-    matched no scope entry and was filtered out before any check ran, with
-    nothing in the output but a hosts count of zero. Normalising in one place
-    is what stops the two paths drifting again.
-    """
+    """The bare hostname from a `host`, `host:port` or `[v6]:port` string."""
     h = (host or "").strip().lower().rstrip(".")
     if h.startswith("[") and "]" in h:
         return h[1:h.index("]")]
@@ -72,12 +48,10 @@ def hostname_of(host):
 
 
 class Scope:
-    """The set of registrable domains a run is allowed to touch.
+    """The registrable domains a run is allowed to touch.
 
-    Membership is suffix-based so subdomains discovered mid-run are covered,
-    but the boundary is a label boundary: "notexample.com" does not match
-    "example.com". Getting that wrong is how a tool wanders onto a lookalike
-    domain owned by someone else.
+    Membership is suffix-based and matches on label boundaries, so
+    "notexample.com" is not inside "example.com".
     """
 
     def __init__(self, domains):
@@ -112,11 +86,8 @@ class Session:
     def get(self, url, **kw):
         """Rate-limited GET returning (response, error).
 
-        Transport failures come back as an error string rather than an
-        exception because for most callers a failed request is an ordinary
-        inconclusive outcome, not an exceptional one — see confidence.py.
-        Scope and budget violations *do* raise: those are bugs or hard stops,
-        not results.
+        Transport failures return an error string; scope and budget
+        violations raise.
         """
         host = urlparse(url).hostname or ""
         if host not in self.scope:
@@ -143,11 +114,8 @@ class Session:
     def get_external(self, url, **kw):
         """GET a third-party service (crt.sh, the Wayback CDX API).
 
-        Deliberately separate from get(): those hosts are not in scope and
-        never should be, but they are also not the target, so routing them
-        through the same scope check would mean either weakening the check or
-        adding the world to the scope. Keeping them on their own method means
-        the scope rule stays absolute for everything aimed at the target.
+        Separate from get() so the scope rule stays absolute for everything
+        aimed at the target.
         """
         gap = time.time() - self._last_request
         if gap < self.min_interval:
@@ -164,10 +132,8 @@ class Session:
     def catchall(self, url):
         """Fingerprint of how an origin answers a path that cannot exist.
 
-        Returns None when the origin was unreachable or answers the canary
-        with something other than 200 — the latter being the well-behaved case,
-        where a 404 means 404 and no comparison is needed. Cached per origin;
-        one probe per host per run.
+        None when the origin was unreachable or answered the canary with
+        anything but 200. Cached per origin.
         """
         parsed = urlparse(url)
         origin = "%s://%s" % (parsed.scheme, parsed.netloc)
@@ -200,10 +166,8 @@ class Session:
         return dict(self._host_counts)
 
 
-# getaddrinfo errno values that mean the name authoritatively does not exist,
-# as opposed to the resolver being unable to answer. EAI_NONAME is the POSIX
-# spelling; WSAHOST_NOT_FOUND (11001) is the Windows one. Deliberately absent:
-# EAI_AGAIN and WSATRY_AGAIN (11002), which are temporary failures.
+# getaddrinfo errno values meaning the name authoritatively does not exist.
+# EAI_AGAIN and WSATRY_AGAIN are excluded: those are temporary failures.
 _NAME_NOT_FOUND = {
     getattr(socket, "EAI_NONAME", -2),
     11001,  # WSAHOST_NOT_FOUND
@@ -214,9 +178,7 @@ RESOLVED = "resolved"
 NXDOMAIN = "nxdomain"
 UNKNOWN = "unknown"
 
-# One lookup answers two questions -- does this name exist, and what is it
-# pointing at -- and a scan asks both. Caching by name keeps --ip free rather
-# than doubling every resolution.
+# Keyed by hostname, so --ip reuses the lookup host selection already did.
 _LOOKUP_CACHE = {}
 
 
@@ -246,12 +208,7 @@ def lookup(host):
 
 
 def clear_lookup_cache():
-    """Forget every resolution.
-
-    The cache is keyed by name and never expires, which is right for a CLI
-    that resolves a host list once and exits, and wrong for anything
-    long-lived or for tests that swap the resolver underneath it.
-    """
+    """Forget every resolution. The cache never expires on its own."""
     _LOOKUP_CACHE.clear()
 
 
@@ -261,36 +218,19 @@ def addresses(host):
 
 
 def resolves(host):
-    """Whether DNS has any address record for this name.
+    """Whether DNS has an address record for this name.
 
-    Worth a dedicated call because NXDOMAIN is the one transport failure that
-    is not ambiguous. A timeout, a reset and a refused connection all leave
-    open whether something is there; a name that does not resolve has nothing
-    behind it to test, which is positive disproof and belongs in DISCARDED
-    rather than inflating the unverified pile the tool exists to keep small.
-
-    Enumerating an archive routinely yields names retired years ago, so this
-    is the common case, not an edge one.
+    Only an authoritative NXDOMAIN counts as absence; a resolver that could
+    not answer leaves the question open.
     """
     name = hostname_of(host)
     if not name:
         return False
-    # Only an authoritative "no such name" counts as absence. A resolver that
-    # could not answer leaves the question open, and treating the two alike
-    # drops a live host from the scan on a transient blip without ever saying
-    # so -- the ambiguity-as-certainty mistake this package argues against,
-    # committed by the package itself. Observed: testphp.vulnweb.com was
-    # silently skipped by one run and resolved fine seconds later.
     return lookup(name)[1] != NXDOMAIN
 
 
 def short_error(error):
-    """Condense a transport error to something a report can print.
-
-    requests wraps urllib3 which wraps the original exception, so a DNS
-    failure arrives as ~300 characters of nested repr with the pool, the URL
-    and the retry count in it. None of that helps the reader decide anything.
-    """
+    """Condense a nested requests/urllib3 error to one printable phrase."""
     text = str(error or "").strip()
     lowered = text.lower()
     for needle, plain in (
@@ -313,12 +253,7 @@ def short_error(error):
 def fetch_site(session, host, **kw):
     """GET a hostname over HTTPS, falling back to HTTP.
 
-    Shared by every check that starts from a bare hostname. Enumeration yields
-    names, not URLs, and a meaningful share of what turns up — old staging
-    boxes, appliance interfaces, the dangling hosts the takeover check exists
-    to find — answers on HTTP only. Assuming HTTPS silently skips them.
-
-    Returns (url, response, error). The URL is the one that answered, so
+    Returns (url, response, error), where url is the one that answered so
     callers resolve relative links against the right scheme.
     """
     last_error = ""

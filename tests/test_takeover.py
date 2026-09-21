@@ -1,10 +1,4 @@
-"""
-Fingerprint matching, and the catch-all case that defeats it.
-
-The second test here is the one that matters: a host answering every path with
-the same page will happily serve a page containing a takeover marker, and a
-check that only substring-matches reports it.
-"""
+"""Fingerprint matching, and the catch-all case that defeats it."""
 
 from reconfirm.checks import Target, takeover
 from reconfirm.confidence import CONFIRMED, DISCARDED, UNVERIFIED
@@ -33,8 +27,7 @@ def test_summary_claims_only_what_was_shown(server, session):
 
     results = takeover.run(session, _target(origin))
     confirmed = [r for r in results if r.state == CONFIRMED]
-    # The check proves the provider serves its unclaimed page; whether the name
-    # can be registered is a separate, manual step, and the wording says so.
+    # Whether the name can be registered is a separate, manual step.
     assert "check whether the name can still be registered" in confirmed[0].summary
 
 
@@ -58,8 +51,7 @@ def test_unreachable_host_is_unverified(session):
 
 
 def test_marker_deep_in_a_bundle_is_ignored(server, session):
-    # "No such app" 200KB into an application bundle is a coincidence, not a
-    # provider's error page.
+    # A marker deep in a bundle is a coincidence, not a provider page.
     body = "<html><script>" + ("x" * 200000) + "\n// No such app\n</script></html>"
     routes = Routes().add("/", body)
     origin = server(routes)

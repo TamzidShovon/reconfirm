@@ -1,11 +1,8 @@
-"""
-Command line entry point.
+"""Command line entry point.
 
-Two subcommands, matching the passive/active split the package is built
-around. `enumerate` reads third-party archives and touches nothing belonging
-to the target. `scan` enumerates and then probes, which is traffic the target
-can see and log — so it takes the flags that bound that traffic, and prints
-what it is about to do before it does it.
+`enumerate` reads third-party archives and touches nothing belonging to the
+target. `scan` enumerates and then probes, so it carries the flags that
+bound that traffic.
 """
 
 import argparse
@@ -17,19 +14,13 @@ from .checks import Target
 from .confidence import CONFIRMED, tally
 from .net import Scope, Session, addresses, resolves
 
-# DNS lookups are I/O bound and independent, and a dead name can sit on a
-# resolver timeout for a second or more. Serially that turns a 90-name
-# enumeration into a minute of waiting before the first probe.
+# Lookups are I/O bound and independent, and a dead name can sit on a
+# resolver timeout for over a second.
 _RESOLVER_WORKERS = 16
 
 
 def _print_addresses(host_addresses):
-    """Print the host-to-address table, grouped so shared hosting is visible.
-
-    Several names on one address is worth seeing at a glance: it usually means
-    one box or one load balancer behind the whole surface, which changes how
-    much of the enumerated list is actually separate infrastructure.
-    """
+    """Print the host-to-address table, grouped so shared hosting is visible."""
     by_address = {}
     for host, found in host_addresses.items():
         by_address.setdefault(",".join(found) or "-", []).append(host)
@@ -41,9 +32,8 @@ def _print_addresses(host_addresses):
         print("  %s" % address)
         for name in sorted(names):
             print("      %s" % name)
-    # Progress goes to stderr unbuffered while this goes to stdout, so without
-    # a flush the table lands after the run it was meant to precede whenever
-    # stdout is a pipe rather than a terminal.
+    # Progress goes to stderr unbuffered; without this flush the table lands
+    # after the run it was meant to precede whenever stdout is a pipe.
     print(flush=True)
 
 
@@ -86,8 +76,7 @@ def cmd_enumerate(args):
         width = max((len(h) for h in hosts), default=0)
         for host in hosts:
             found = addresses(host)
-            # Tab-separated so the output still pipes into cut and awk; the
-            # padding is only there for reading it directly.
+            # Tab-separated so it still pipes into cut and awk.
             print("%s\t%s" % (host.ljust(width), ",".join(found) if found else "-"))
     else:
         for host in hosts:
@@ -112,11 +101,9 @@ def cmd_scan(args):
         return 2
 
     if args.hosts_from:
-        # utf-8-sig, not utf-8: Notepad and PowerShell's Out-File write a BOM,
-        # and plain utf-8 keeps it, so the first hostname arrives as
-        # "﻿example.com". That fails the scope check and is dropped
-        # silently -- the first host in a Windows-authored file just vanishes.
-        # The codec is a no-op on files without a BOM.
+        # utf-8-sig, not utf-8: Notepad and PowerShell's Out-File write a
+        # BOM, which plain utf-8 keeps, silently losing the first hostname.
+        # A no-op on files without one.
         with open(args.hosts_from, encoding="utf-8-sig") as fh:
             hosts = [line.strip() for line in fh if line.strip()]
         notes = []
@@ -128,11 +115,8 @@ def cmd_scan(args):
 
     hosts = [h for h in hosts if h in session.scope]
 
-    # Resolve before truncating. --max-hosts used to take the first N in sort
-    # order, which spends the budget on whatever happens to sort first: on a
-    # live run that was twenty archived junk names, none of which resolved,
-    # while the hosts actually worth probing sat past the cutoff. DNS is cheap
-    # and answers the only question that matters for ordering.
+    # Resolve before truncating, so --max-hosts spends its budget on hosts
+    # that exist rather than on whatever sorts first.
     if hosts:
         emit("resolving %d hostnames" % len(hosts))
         live, dead = _partition_by_resolution(hosts)
@@ -151,8 +135,7 @@ def cmd_scan(args):
         )
         hosts = hosts[:args.max_hosts]
 
-    # Resolution is already cached from the partition above, so this costs
-    # nothing beyond the formatting.
+    # Cached by the partition above, so this costs only the formatting.
     host_addresses = {h: addresses(h) for h in hosts} if args.ip else {}
     if host_addresses:
         _print_addresses(host_addresses)
@@ -162,10 +145,8 @@ def cmd_scan(args):
          % (len(hosts), len(modules), args.delay))
 
     if not hosts:
-        # Reaching here means even the seeded apex was filtered out, so the
-        # run is about to report nothing having tested nothing. Say so: an
-        # empty result set that looks identical to a clean one is the failure
-        # this tool exists to avoid.
+        # Even the seeded apex was filtered out. Say so, rather than let an
+        # empty result set read as a clean one.
         notes.append(
             "no hosts were probed, so these results say nothing about the target -- "
             "check the domain and whether the passive sources returned anything"
@@ -190,9 +171,8 @@ def cmd_scan(args):
         )
         print("wrote %s" % path, file=sys.stderr)
 
-    # Exit 1 when something was confirmed, so the tool composes with shell
-    # conditionals and CI steps. Unverified results deliberately do not trip
-    # it: an inconclusive check is not a finding.
+    # Exit 1 on a confirmed result so this composes with shell conditionals
+    # and CI steps. Unverified does not trip it.
     return 1 if tally(results)[CONFIRMED] else 0
 
 
@@ -219,8 +199,7 @@ def build_parser():
                        help="skip the Wayback Machine source")
         p.add_argument("-q", "--quiet", action="store_true",
                        help="suppress progress output on stderr")
-        # Both spellings: -ip is what people type for this, --ip is what
-        # argparse conventions expect.
+        # Both spellings: -ip is what people type, --ip is conventional.
         p.add_argument("-ip", "--ip", dest="ip", action="store_true",
                        help="resolve hosts and show their IP addresses")
 

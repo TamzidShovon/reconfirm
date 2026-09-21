@@ -1,11 +1,7 @@
-"""
-A local HTTP server the checks can be pointed at.
+"""A local HTTP server the checks can be pointed at.
 
-The rules this package is built on are claims about behaviour against real
-responses — a catch-all that answers 200 to everything, a bucket listing whose
-keys belong to someone else — and asserting them against mocked request objects
-would be asserting that the mocks were built correctly. A server that actually
-serves the awkward responses is the only way these tests mean anything.
+The rules under test are claims about behaviour against real responses, so
+the fixtures serve real ones rather than mocking them.
 """
 
 import threading
@@ -19,8 +15,7 @@ from reconfirm.net import Scope, Session
 class Routes:
     """Response table for the test server.
 
-    `catchall` is the response for any path with no explicit route, which is
-    how a SPA or a WAF behaves and the case most checks have to survive.
+    `catchall` answers any path with no explicit route, as a SPA or WAF does.
     """
 
     def __init__(self):
@@ -76,18 +71,13 @@ def server():
 
 @pytest.fixture
 def session():
-    """A Session scoped to loopback, with the rate limit off.
-
-    127.0.0.1 is in scope as a literal because Scope matching is hostname
-    based and the test server has no name.
-    """
+    """A Session scoped to loopback, with the rate limit off."""
     return Session(Scope(["127.0.0.1"]), min_interval=0.0, timeout=5)
 
 
 @pytest.fixture(autouse=True)
 def _clear_dns_cache():
-    """Resolution is cached module-wide, so one test's answer would otherwise
-    be served to the next -- including to tests that swap the resolver."""
+    """Resolution is cached module-wide, so clear it between tests."""
     from reconfirm.net import clear_lookup_cache
 
     clear_lookup_cache()

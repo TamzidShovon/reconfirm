@@ -43,7 +43,6 @@ def test_port_does_not_smuggle_a_host_into_scope():
 
 
 def test_loopback_with_port_matches_loopback_scope():
-    # The exact case the controlled-target run exercises.
     assert "127.0.0.1:59194" in Scope(["127.0.0.1"])
 
 
@@ -67,9 +66,7 @@ def test_partition_preserves_order():
 
 
 def test_hosts_file_with_a_utf8_bom_is_read_correctly(tmp_path):
-    # Notepad and PowerShell's Out-File both write a BOM. Read as plain utf-8
-    # the first line arrives as "﻿example.com", fails the scope check and
-    # disappears without a word.
+    # Read as plain utf-8, a BOM leaves U+FEFF on the first hostname.
     path = tmp_path / "hosts.txt"
     path.write_bytes(b"\xef\xbb\xbfapi.example.com\r\nwww.example.com\r\n")
 

@@ -1,33 +1,11 @@
-"""
-Credential material in served JavaScript.
+"""Credential material in served JavaScript.
 
-Regex secret scanning is the noisiest technique in recon. Run a pattern like
-`apiKey = "..."` over a bundled application and it matches the library that
-*reads* API keys, the config template shipping with placeholders, the test
-fixture, and the masked-display component — all before it matches anything
-real. A scanner that reports every match is describing the shape of the code,
-not finding a secret.
+Structural patterns identify a credential by a format nothing else uses, so
+the match is the evidence. Contextual patterns identify an assignment that
+might hold one, and the captured value must clear a placeholder list and an
+entropy floor before it is claimed.
 
-Three rules cut that down, and they are the substance of this check:
-
-1. Patterns come in two kinds. A *structural* pattern (AKIA..., ghp_...,
-   sk_live_...) identifies a credential by a format nothing else uses, so the
-   match is itself the evidence. A *contextual* pattern (`secret: "..."`) only
-   identifies an assignment that might hold one, and the captured value still
-   has to earn the claim. Conflating the two is why generic scanners
-   over-report.
-
-2. The captured value is judged, not the surrounding text. `apiKey = ""`
-   matched as a whole string looks like a twelve-character secret; the value
-   is empty.
-
-3. Contextual matches must clear both a placeholder list and an entropy floor.
-   Real credentials are drawn from a large random space and look it;
-   "changeme", "your_api_key_here" and "/api/v1/users" do not.
-
-Values are redacted before they reach a report. A tool whose output file is
-itself a list of live credentials has made the problem worse, and the first
-and last few characters are enough to locate the string in the bundle.
+Values are redacted before they reach a report.
 """
 
 NAME = "secrets"
@@ -40,8 +18,7 @@ from urllib.parse import urljoin
 from ..confidence import confirmed, discarded, inconclusive, unverified
 from ..net import BudgetExhausted, OutOfScope, fetch_site, resolves, short_error
 
-# Self-evidencing formats. The match is the finding: nothing else looks like
-# this, so there is nothing further to validate.
+# Self-evidencing formats: the match is the finding.
 STRUCTURAL_PATTERNS = [
     (re.compile(r"AKIA[0-9A-Z]{16}"), "AWS access key id"),
     (re.compile(r"ghp_[A-Za-z0-9]{36}"), "GitHub personal access token"),
@@ -82,16 +59,14 @@ CONTEXTUAL_PATTERNS = [
     ),
 ]
 
-# A JWT is structural in shape but routinely non-secret in content — public
-# demo tokens and expired fixtures are everywhere — so it is surfaced without
-# being claimed as proven.
+# Structural in shape but routinely non-secret in content, so surfaced
+# without being claimed as proven.
 JWT_PATTERN = re.compile(
     r"eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}"
 )
 
-# A bare PEM header matches key-handling code and masked-display components as
-# readily as it matches a key. Requiring base64 body after it is the whole
-# difference; see docs/CONFIDENCE.md.
+# A bare PEM header matches key-handling code too, so base64 key material
+# must follow it.
 PEM_PATTERN = re.compile(
     r"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----"
     r"[\r\n\s]+([A-Za-z0-9+/=\r\n\s]{100,})"
@@ -105,9 +80,8 @@ PLACEHOLDERS = {
     "fake", "redacted", "hidden", "value", "string", "foo", "bar",
 }
 
-# Shannon entropy per character. Hex sits near 4.0, base64 near 5.0, and short
-# English identifiers well under 3.0. The floor admits short real keys while
-# rejecting words and paths.
+# Shannon entropy per character: hex ~4.0, base64 ~5.0, short English
+# identifiers well under 3.0.
 MIN_ENTROPY = 3.0
 MIN_LENGTH = 12
 
@@ -137,8 +111,7 @@ def redact(value):
 def classify_value(value):
     """Decide whether a captured value can support a claim.
 
-    Returns (ok, reason). The reason becomes the DISCARDED reason verbatim, so
-    it explains the rejection rather than just naming it.
+    Returns (ok, reason); the reason becomes the DISCARDED reason verbatim.
     """
     value = (value or "").strip()
     if not value:
@@ -179,8 +152,8 @@ def _collect_sources(session, host):
         try:
             script, _error = session.get(url)
         except OutOfScope:
-            # Third-party CDN scripts fall outside scope by design: a key in
-            # Google's analytics bundle is not this target's finding.
+            # Out of scope by design: a key in a third-party CDN bundle is
+            # not this target's finding.
             continue
         if script is not None:
             sources.append((url, script.text))
@@ -309,9 +282,8 @@ def run(session, target, emit=None):
             found.extend(hits)
 
         if not found:
-            # Without this, a host whose scripts were fetched and scanned
-            # clean is absent from the report, and absent looks identical to
-            # never checked. Saying so is the whole premise of the tool.
+            # Reported rather than omitted, so scanned-clean is
+            # distinguishable from never-checked.
             results.append(
                 discarded(
                     NAME, host,

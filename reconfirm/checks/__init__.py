@@ -1,13 +1,9 @@
-"""
-The check contract, and the registry of available checks.
+"""The check contract and the registry of available checks.
 
-A check receives a Target and the shared Session, and returns Results. It does
-not print findings, decide severity, or write files — that separation is what
-lets the test suite drive a check against a local server and assert on its
-states directly, which is how every rule in docs/CONFIDENCE.md is held in
-place.
+A check receives a Target and the shared Session and returns Results. It
+does not print, rank severity, or write files.
 
-Adding a check means writing a module with NAME, DESCRIPTION and run(), then
+Adding one means writing a module with NAME, DESCRIPTION and run(), then
 listing it in CHECKS below.
 """
 
@@ -21,9 +17,7 @@ class Target:
     domain: str
     hosts: list = field(default_factory=list)
     """`domain` is the registrable domain the run was authorised against;
-    `hosts` are the hostnames enumeration produced. Checks that probe iterate
-    hosts and resolve their own scheme via net.fetch_site; checks that derive
-    names from the organisation, like buckets, use domain."""
+    `hosts` are the hostnames enumeration produced."""
 
 
 CHECKS = {
@@ -33,8 +27,7 @@ CHECKS = {
 
 
 def get(names):
-    """Resolve check names to modules, raising on an unknown name rather than
-    silently running fewer checks than the user asked for."""
+    """Resolve check names to modules, raising on an unknown name."""
     unknown = [n for n in names if n not in CHECKS]
     if unknown:
         raise KeyError(

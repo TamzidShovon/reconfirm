@@ -1,11 +1,4 @@
-"""
-The state rules, asserted directly.
-
-These are the cheapest tests in the suite and the ones most worth having: every
-rule here is enforced in a constructor, so a check that violates one fails at
-the moment it builds the Result rather than by emitting a bad claim into a
-report.
-"""
+"""The state rules, asserted directly."""
 
 import pytest
 
@@ -30,8 +23,7 @@ def test_confirmed_requires_evidence():
 
 
 def test_confirmed_rejects_whitespace_evidence():
-    # Guards the case where a check interpolates an empty capture group and
-    # gets a string that is technically non-empty.
+    # An empty capture group can yield a technically non-empty string.
     with pytest.raises(ConfidenceError, match="no evidence"):
         Result("c", "t", CONFIRMED, "found something", evidence="   \n  ")
 
@@ -52,8 +44,7 @@ def test_evidence_is_capped():
 
 
 def test_inconclusive_lands_on_unverified_not_discarded():
-    # The asymmetry, stated as a test. A transport failure must never be
-    # allowed to read as "ruled out".
+    # A transport failure must never read as "ruled out".
     r = inconclusive("c", "t", "s", ConnectionError("connection reset"))
     assert r.state == UNVERIFIED
     assert "ConnectionError" in r.reason

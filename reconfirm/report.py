@@ -1,15 +1,7 @@
-"""
-Rendering results to a terminal and to JSON.
+"""Rendering results to a terminal and to JSON.
 
-The console output groups by state rather than by check, because the state is
-what determines what the reader does next: act on CONFIRMED, look at
-UNVERIFIED by hand, ignore DISCARDED unless auditing the tool itself. Grouping
-by check would scatter the three across the whole report and undo the point of
-separating them.
-
-DISCARDED is hidden by default and printed on request. It is the tool showing
-its work — every entry is a claim it declined to make and the reason — which is
-useful when tuning a check or arguing about a rule, and noise otherwise.
+Output groups by state, since the state determines what the reader does
+next. DISCARDED is hidden unless asked for.
 """
 
 import json
@@ -19,10 +11,8 @@ from datetime import datetime, timezone
 
 from .confidence import CONFIRMED, DISCARDED, STATES, UNVERIFIED, sort_results, tally
 
-# ASCII only, deliberately. The Windows console defaults to cp1252, which
-# cannot encode an em dash or an arrow; output written with them either raises
-# UnicodeEncodeError or prints replacement characters, and a report nobody can
-# read on the platform it ran on is not a report.
+# ASCII only: the Windows console defaults to cp1252, which cannot encode
+# an em dash or an arrow. Enforced by tests/test_encoding.py.
 HEADINGS = {
     CONFIRMED: "CONFIRMED - evidence supports the claim",
     UNVERIFIED: "UNVERIFIED - plausible, proof was inconclusive",
@@ -42,9 +32,8 @@ def _use_color(stream):
 def _wrap(text, width, indent, hanging=None):
     """Minimal greedy wrapper.
 
-    `hanging` is the indent for continuation lines; it defaults to matching
-    `indent` in width so that a marker like "-> " appears once and the rest of
-    the paragraph stays aligned under it rather than repeating it.
+    `hanging` is the continuation indent, defaulting to `indent`’s width so a
+    marker like "-> " appears once.
     """
     if hanging is None:
         hanging = " " * len(indent)
@@ -112,8 +101,8 @@ def to_json(results, domain, notes=None, requests_made=None, addresses=None):
         "requests_made": requests_made or {},
         "results": [r.as_dict() for r in results],
     }
-    # Only present when --ip was passed. An empty mapping would read as "these
-    # hosts have no addresses" rather than "addresses were not looked up".
+    # Absent unless --ip was passed: {} would read as "no addresses" rather
+    # than "not looked up".
     if addresses:
         payload["addresses"] = {h: list(a) for h, a in sorted(addresses.items())}
     return payload
