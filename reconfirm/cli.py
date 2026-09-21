@@ -56,7 +56,9 @@ def cmd_scan(args):
     try:
         modules = checks.get(args.checks) if args.checks else list(checks.CHECKS.values())
     except KeyError as e:
-        print(str(e), file=sys.stderr)
+        # str() on a KeyError reprs its argument, so the message would print
+        # wrapped in quotes.
+        print(e.args[0], file=sys.stderr)
         return 2
 
     if args.hosts_from:
@@ -85,7 +87,7 @@ def cmd_scan(args):
 
     results = []
     for module in modules:
-        emit("running %s — %s" % (module.NAME, module.DESCRIPTION))
+        emit("running %s - %s" % (module.NAME, module.DESCRIPTION))
         results.extend(module.run(session, target, emit=emit))
 
     report.render(

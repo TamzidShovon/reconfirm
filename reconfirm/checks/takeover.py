@@ -70,7 +70,7 @@ def run(session, target, emit=None):
             # a dead A record and a dangling CNAME to a dead provider look
             # identical from here. It stays unverified.
             results.append(
-                unverified(NAME, host, "host did not respond", "no response over HTTPS or HTTP — %s" % error)
+                unverified(NAME, host, "host did not respond", "no response over HTTPS or HTTP - %s" % error)
             )
             continue
 
@@ -97,7 +97,7 @@ def run(session, target, emit=None):
             results.append(
                 confirmed(
                     NAME, url,
-                    "serves %s's unclaimed-instance page — check whether the name can "
+                    "serves %s's unclaimed-instance page - check whether the name can "
                     "still be registered" % service,
                     evidence=snippet.strip(),
                 )

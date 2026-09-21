@@ -147,7 +147,7 @@ def classify_value(value):
         return False, "the value %r is a known placeholder, not a credential" % value
     if len(value) < MIN_LENGTH:
         return False, (
-            "the value is %d characters — too short to be a credential" % len(value)
+            "the value is %d characters - too short to be a credential" % len(value)
         )
     if value.startswith(("/", "./", "../", "http://", "https://")):
         return False, "the value is a URL or path, not a credential"
@@ -157,7 +157,7 @@ def classify_value(value):
     if entropy < MIN_ENTROPY:
         return False, (
             "the value carries %.2f bits of entropy per character, below the %.1f "
-            "floor — it reads as a word or identifier rather than random material"
+            "floor - it reads as a word or identifier rather than random material"
             % (entropy, MIN_ENTROPY)
         )
     return True, ""
@@ -258,7 +258,7 @@ def _scan(source_url, content):
                 source_url,
                 "JWT present in served script",
                 "a JWT in client-side code is frequently a public demo or an expired "
-                "fixture token — decode the payload and check its claims and expiry",
+                "fixture token - decode the payload and check its claims and expiry",
             )
         )
 

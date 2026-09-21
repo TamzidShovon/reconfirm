@@ -51,6 +51,25 @@ def _canary_path():
     return "/__reconfirm_canary_%s__" % tail
 
 
+def hostname_of(host):
+    """The bare hostname from a `host`, `host:port` or `[v6]:port` string.
+
+    Scope checks happen in two places that disagreed about this: requests go
+    through urlparse, which drops the port, while a hostname read from
+    --hosts-from keeps whatever the file had. A `host:port` line therefore
+    matched no scope entry and was filtered out before any check ran, with
+    nothing in the output but a hosts count of zero. Normalising in one place
+    is what stops the two paths drifting again.
+    """
+    h = (host or "").strip().lower().rstrip(".")
+    if h.startswith("[") and "]" in h:
+        return h[1:h.index("]")]
+    # A single colon is host:port; several mean a bare IPv6 address.
+    if h.count(":") == 1:
+        return h.split(":")[0]
+    return h
+
+
 class Scope:
     """The set of registrable domains a run is allowed to touch.
 
@@ -64,7 +83,7 @@ class Scope:
         self.domains = {d.lower().lstrip(".").rstrip(".") for d in domains if d}
 
     def __contains__(self, host):
-        h = (host or "").lower().rstrip(".")
+        h = hostname_of(host)
         return any(h == d or h.endswith("." + d) for d in self.domains)
 
     def __iter__(self):

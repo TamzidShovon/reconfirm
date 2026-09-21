@@ -118,7 +118,7 @@ def _ownership(keys, domain):
     """
     if not keys:
         return "empty", (
-            "the bucket is listable but empty, so nothing evidences who owns it — "
+            "the bucket is listable but empty, so nothing evidences who owns it - "
             "confirm by hand before treating it as the target's"
         )
     haystack = " ".join(keys).lower()
@@ -127,7 +127,7 @@ def _ownership(keys, domain):
     if root.lower() in haystack or name in haystack:
         return "owned", ""
     return "foreign", (
-        "the bucket is listable but its file keys reference neither %r nor %r — "
+        "the bucket is listable but its file keys reference neither %r nor %r - "
         "it belongs to an unrelated party and is not this target's exposure"
         % (root, name)
     )

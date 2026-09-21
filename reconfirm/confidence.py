@@ -108,7 +108,7 @@ def inconclusive(check, target, summary, error):
     """
     if isinstance(error, BaseException):
         error = "%s: %s" % (type(error).__name__, error)
-    return unverified(check, target, summary, "could not complete check — %s" % error)
+    return unverified(check, target, summary, "could not complete check - %s" % error)
 
 
 def sort_results(results):
