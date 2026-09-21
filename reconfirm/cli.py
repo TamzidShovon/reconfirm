@@ -91,7 +91,7 @@ def cmd_scan(args):
     session = _build_session(args, args.domain)
 
     try:
-        modules = checks.get(args.checks) if args.checks else list(checks.CHECKS.values())
+        modules = checks.get(args.checks or checks.DEFAULT_CHECKS)
     except KeyError as e:
         # str() on a KeyError reprs its argument, so the message would print
         # wrapped in quotes.
@@ -208,8 +208,9 @@ def build_parser():
     p_scan = sub.add_parser("scan", help="enumerate, then probe and grade")
     shared(p_scan)
     p_scan.add_argument("--checks", nargs="*", metavar="NAME",
-                        help="checks to run (default: all): "
-                             + ", ".join(sorted(checks.CHECKS)))
+                        help="checks to run (default: %s; also available: %s)"
+                             % (", ".join(checks.DEFAULT_CHECKS),
+                                ", ".join(sorted(set(checks.CHECKS) - set(checks.DEFAULT_CHECKS)))))
     p_scan.add_argument("--hosts-from", metavar="FILE",
                         help="read hostnames from a file instead of enumerating")
     p_scan.add_argument("--max-hosts", type=int, default=50, metavar="N",

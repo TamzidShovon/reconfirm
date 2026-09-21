@@ -9,7 +9,7 @@ listing it in CHECKS below.
 
 from dataclasses import dataclass, field
 
-from . import buckets, secrets, takeover
+from . import buckets, ports, secrets, takeover
 
 
 @dataclass
@@ -22,8 +22,12 @@ class Target:
 
 CHECKS = {
     module.NAME: module
-    for module in (takeover, secrets, buckets)
+    for module in (takeover, secrets, buckets, ports)
 }
+
+# What a bare `scan` runs. `ports` is registered but excluded: it opens
+# connections to ports a browser would not, so it is opt-in via --checks.
+DEFAULT_CHECKS = ("takeover", "secrets", "buckets")
 
 
 def get(names):

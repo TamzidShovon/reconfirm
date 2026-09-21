@@ -141,6 +141,18 @@ were not looked up". IPv4 and IPv6 both come back.
 The lookup is free: `scan` already resolves every host to decide which are
 worth probing, and `-ip` reuses that result rather than resolving twice.
 
+Port scanning is opt-in, because it opens connections a browser would not:
+
+```bash
+python -m reconfirm scan example.com --checks ports
+```
+
+It probes 28 common ports per host and grades each outcome: a completed
+handshake is `CONFIRMED` with the banner attached, a refused connection is
+`DISCARDED`, and a timeout is `UNVERIFIED` - a firewall, a rate limiter and
+a slow host produce that identically, so it is reported as unknown rather
+than closed. Most scanners collapse those last two into "closed".
+
 Useful flags: `--delay` (gap between requests, default 0.3s), `--budget`
 (max requests per host, default 200), `--max-hosts` (default 50),
 `--also-scope` (additional authorised domains), `--no-wayback`.
@@ -155,6 +167,7 @@ shell conditionals. Unverified results deliberately do not trip it.
 | `takeover` | Hosts serving a provider's unclaimed-instance page (GitHub Pages, Heroku, Shopify, Fastly, Zendesk and others) |
 | `secrets` | Credential material in served JavaScript, separating self-evidencing formats from contextual assignments that have to earn the claim |
 | `buckets` | Publicly listable S3 and GCS buckets, with ownership evidenced by the file keys inside |
+| `ports` | TCP ports accepting connections, with the service banner as evidence. **Opt-in** - not part of a default scan |
 
 ## Maturity
 
@@ -175,12 +188,19 @@ ownership rule that decides confirmed-versus-discarded is unit tested, but
 no run has yet found a listable bucket, so that branch has never executed
 against a real one.
 
+**`ports` — validated against a live host.** Against scanme.nmap.org, which
+Nmap publishes for exactly this, it confirmed 22/tcp with the banner
+`SSH-2.0-OpenSSH_6.6.1p1` and 80/tcp, and reported the remaining 26 ports as
+unverified rather than closed, which is correct: that host drops rather than
+refuses. This is the only check to have produced a confirmed finding against
+a third-party target.
+
 **`takeover` — synthetic only.** It fires correctly against a local server
 serving a provider's unclaimed-instance page, and correctly discards the
 same marker coming from a catch-all host. It has not yet encountered a real
 dangling CNAME. Treat its detection rate as unmeasured.
 
-Scan record so far: seven live targets, zero confirmed findings. Six of
+Scan record so far: eight live targets, and the only confirmed findings came from `ports`. Six of
 those were deliberately-vulnerable teaching applications — Juice Shop,
 Gruyere, AltoroMutual, the vulnweb family — which are built to demonstrate
 SQL injection, XSS and broken authentication. None of those is something
