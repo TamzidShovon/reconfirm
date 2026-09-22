@@ -59,3 +59,35 @@ def test_foreign_keys_disprove_ownership():
 def test_ownership_match_is_case_insensitive():
     state, _ = buckets._ownership(["Uploads/EXAMPLE.COM/x.png"], "example.com")
     assert state == "owned"
+
+
+# --- IP-literal targets ---
+
+@pytest.mark.parametrize("target", [
+    "127.0.0.1", "10.0.0.1", "192.168.1.50", "8.8.8.8", "::1",
+    "2606:2800:220:1:248:1893:25c8:1946",
+])
+def test_ip_literals_are_recognised(target):
+    assert buckets.is_ip_literal(target)
+
+
+@pytest.mark.parametrize("target", [
+    "example.com", "cdn.district.in", "acme.co.uk", "", "1.2.3.4.example.com",
+])
+def test_domains_are_not_ip_literals(target):
+    assert not buckets.is_ip_literal(target)
+
+
+def test_ip_target_declines_instead_of_guessing_names():
+    # 127.0.0.1 used to derive the organisation name "0" and then probe real
+    # buckets named 0-media, 0-public and so on, which belong to strangers.
+    from reconfirm.checks import Target
+    from reconfirm.confidence import DISCARDED
+
+    class NoNetwork:
+        def get_external(self, *a, **kw):
+            raise AssertionError("an IP target must not reach any storage endpoint")
+
+    results = buckets.run(NoNetwork(), Target(domain="127.0.0.1", hosts=["127.0.0.1"]))
+    assert [r.state for r in results] == [DISCARDED]
+    assert "IP address" in results[0].summary

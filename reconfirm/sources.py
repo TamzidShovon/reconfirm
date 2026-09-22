@@ -9,6 +9,8 @@ import json
 import re
 from urllib.parse import urlparse
 
+from .net import is_ip_literal
+
 CRTSH_URL = "https://crt.sh/?q=%25.{domain}&output=json"
 WAYBACK_URL = (
     "http://web.archive.org/cdx/search/cdx"
@@ -90,6 +92,13 @@ def enumerate_hosts(session, domain, use_wayback=True, emit=None):
     # degrades to "checked the apex only" rather than checking nothing.
     candidates = {domain.lower().strip().rstrip(".")}
     notes = []
+
+    if is_ip_literal(domain):
+        # Both sources are indexes of names. Querying them for an address
+        # spends two requests to be told 404, and the target is already the
+        # only host there is.
+        emit("target is an IP address, skipping passive sources")
+        return sorted(candidates), notes
 
     emit("querying certificate transparency")
     hosts, note = from_certificates(session, domain)

@@ -6,6 +6,7 @@ exist, so checks can tell a real response from a host that returns 200 for
 everything.
 """
 
+import ipaddress
 import random
 import socket
 import string
@@ -34,6 +35,15 @@ class BudgetExhausted(Exception):
 def _canary_path():
     tail = "".join(random.choices(string.ascii_lowercase + string.digits, k=14))
     return "/__reconfirm_canary_%s__" % tail
+
+
+def is_ip_literal(host):
+    """True when this is an address rather than a name."""
+    try:
+        ipaddress.ip_address(hostname_of(host).strip("[]"))
+    except ValueError:
+        return False
+    return True
 
 
 def hostname_of(host):

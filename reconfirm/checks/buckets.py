@@ -12,6 +12,7 @@ DESCRIPTION = "publicly listable cloud storage owned by the target"
 import re
 
 from ..confidence import confirmed, inconclusive, unverified, discarded
+from ..net import is_ip_literal
 
 # Labels that describe a function, not an owner. A candidate derived from
 # one of these usually belongs to an unrelated company.
@@ -101,6 +102,19 @@ def run(session, target, emit=None):
     results = []
     domain = target.domain
     probed = 0
+
+    if is_ip_literal(domain):
+        # Candidates are derived from an organisation name, and an address has
+        # none: 127.0.0.1 yields "0", which then probes real buckets belonging
+        # to strangers. Declining is the only correct answer here.
+        return [
+            discarded(
+                NAME, domain,
+                "no bucket names can be derived from an IP address",
+                "candidate names come from the organisation in a domain, and an "
+                "address carries none - scan the hostname instead",
+            )
+        ]
 
     for name in candidates(domain):
         for provider, template in PROVIDERS:

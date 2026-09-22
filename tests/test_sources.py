@@ -106,3 +106,34 @@ def test_legitimate_hosts_survive():
     for name in ["testphp.vulnweb.com", "rest.vulnweb.com", "2fa.vulnweb.com",
                  "api-v2.vulnweb.com", "3d.vulnweb.com"]:
         assert sources._clean(name, "vulnweb.com") == name, name
+
+
+def test_ip_target_skips_both_passive_sources():
+    # crt.sh and the Wayback Machine are indexes of names; querying them for
+    # an address spends two requests to be told 404.
+    class NoNetwork:
+        def get_external(self, *a, **kw):
+            raise AssertionError("an IP target must not query a passive source")
+
+    hosts, notes = sources.enumerate_hosts(NoNetwork(), "45.33.32.156")
+    assert hosts == ["45.33.32.156"]
+    assert notes == []
+
+
+def test_ipv6_target_also_skips_passive_sources():
+    class NoNetwork:
+        def get_external(self, *a, **kw):
+            raise AssertionError("an IP target must not query a passive source")
+
+    hosts, _notes = sources.enumerate_hosts(NoNetwork(), "::1")
+    assert hosts == ["::1"]
+
+
+def test_domain_target_still_queries_sources():
+    session = FakeSession({
+        "crt.sh": (FakeResponse(200, payload=[{"name_value": "api.example.com"}]), None),
+        "archive.org": (FakeResponse(200, text=""), None),
+    })
+    hosts, _notes = sources.enumerate_hosts(session, "example.com")
+    assert "api.example.com" in hosts
+    assert session.calls
