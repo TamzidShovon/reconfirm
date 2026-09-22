@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "reconfirm"
 version = "0.1.0"
-description = "Attack-surface recon that grades its own findings."
+description = "Attack-surface recon in pure Python - subdomains, open ports, exposed secrets, cloud storage - grading every result confirmed, unverified or discarded."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }

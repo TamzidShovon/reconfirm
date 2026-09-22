@@ -1,6 +1,7 @@
 # reconfirm
 
-Attack-surface recon that grades its own findings.
+Attack-surface recon in pure Python - subdomains, open ports, exposed secrets,
+cloud storage - grading every result confirmed, unverified or discarded.
 
 [![tests](https://github.com/TamzidShovon/reconfirm/actions/workflows/tests.yml/badge.svg)](https://github.com/TamzidShovon/reconfirm/actions/workflows/tests.yml)
 
