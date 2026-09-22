@@ -153,6 +153,62 @@ handshake is `CONFIRMED` with the banner attached, a refused connection is
 a slow host produce that identically, so it is reported as unknown rather
 than closed. Most scanners collapse those last two into "closed".
 
+Name which ports with `-p`/`--ports`. On its own it runs the ports check and
+nothing else, so naming ports is the whole command:
+
+```bash
+python -m reconfirm scan example.com -p 22,80,443
+python -m reconfirm scan example.com -p 1-1024
+python -m reconfirm scan example.com -p all      # every port, 1-65535
+```
+
+`-p` accepts a single port, a comma-separated list, inclusive ranges, or
+`all`/`-` for every port. A spec naming more than 2000 ports prints a note
+rather than refusing, since a deliberate full sweep is legitimate and slow.
+
+To run the usual checks *and* a port scan, name both:
+
+```bash
+python -m reconfirm scan example.com --checks takeover secrets -p 22,80
+```
+
+`-p` deliberately does not add itself to the default set. Doing so turns
+"scan these ports" into a full recon sweep, which in testing meant probing
+third-party storage endpoints nobody asked about.
+
+`--select` shows what enumeration found and lets you choose which hosts to
+scan, before anything is probed:
+
+```bash
+python -m reconfirm scan example.com --select -p 22,80,443
+```
+
+```
+HOSTS  (3 found)
+----------------------------------------------------
+  1  scanme.example.com  192.0.2.10
+  2  example.com         192.0.2.44
+  3  www.example.com     192.0.2.44
+
+Select hosts to scan. Ranges and lists work (1,3,5-7).
+Selections stack, so answer again to add more.
+  all   every host        done  start the scan
+  none  cancel            list  show the table again
+
+reconfirm [nothing queued] > 1
+  +1 host(s) queued (1 total)
+reconfirm [1 queued: scanme.example.com] > 3
+  +1 host(s) queued (2 total)
+reconfirm [2 queued: scanme.example.com, www.example.com] > done
+```
+
+Each answer adds to the queue rather than replacing it, so a range and a
+single host can be combined across two prompts before scanning starts.
+Answering `all` still requires `done` to proceed, so a later `none` can
+cancel it. `--select` falls back to selecting every host automatically,
+with a note saying so, whenever stdin is not a terminal - a prompt that
+blocks a piped or scripted run is worse than no prompt.
+
 Useful flags: `--delay` (gap between requests, default 0.3s), `--budget`
 (max requests per host, default 200), `--max-hosts` (default 50),
 `--also-scope` (additional authorised domains), `--no-wayback`.
@@ -182,30 +238,32 @@ redacted it; with `apiKey: "changeme"` appended it discarded the match and
 named the placeholder. Minified code is where naive entropy scanners light
 up, so the zero matters as much as the catch.
 
-**`buckets` — live path exercised, never a positive.** It has run against
-real S3 and GCS endpoints across 51 candidate names per target. The
-ownership rule that decides confirmed-versus-discarded is unit tested, but
-no run has yet found a listable bucket, so that branch has never executed
-against a real one.
+**`buckets` — validated against a live positive.** Scanning nmap.org turned
+up `nmap-public.s3.amazonaws.com`: publicly listable, holding real installer
+files (`nmap-7.93-setup.exe`, a Wireshark installer) that reference the
+target by name, which is exactly the ownership evidence the check requires.
+Confirmed correctly. Three sibling candidates (`nmap`, `nmap-data`,
+`nmap-files`) came back `UNVERIFIED` - they exist but deny listing, which
+is not an exposure and is reported as such rather than as a finding.
 
 **`ports` — validated against a live host.** Against scanme.nmap.org, which
 Nmap publishes for exactly this, it confirmed 22/tcp with the banner
-`SSH-2.0-OpenSSH_6.6.1p1` and 80/tcp, and reported the remaining 26 ports as
+`SSH-2.0-OpenSSH_6.6.1p1` and 80/tcp, and reported the remaining ports as
 unverified rather than closed, which is correct: that host drops rather than
-refuses. This is the only check to have produced a confirmed finding against
-a third-party target.
+refuses.
 
 **`takeover` — synthetic only.** It fires correctly against a local server
 serving a provider's unclaimed-instance page, and correctly discards the
 same marker coming from a catch-all host. It has not yet encountered a real
 dangling CNAME. Treat its detection rate as unmeasured.
 
-Scan record so far: eight live targets, and the only confirmed findings came from `ports`. Six of
-those were deliberately-vulnerable teaching applications — Juice Shop,
-Gruyere, AltoroMutual, the vulnweb family — which are built to demonstrate
-SQL injection, XSS and broken authentication. None of those is something
-this tool tests for, so finding nothing there is the correct result rather
-than a miss. Two of them serve no JavaScript at all.
+Scan record so far: eight live targets, with confirmed findings from
+`buckets` and `ports`. Six of the eight were deliberately-vulnerable
+teaching applications — Juice Shop, Gruyere, AltoroMutual, the vulnweb
+family — which are built to demonstrate SQL injection, XSS and broken
+authentication. None of those is something this tool tests for, so finding
+nothing there is the correct result rather than a miss. Two of them serve no
+JavaScript at all.
 
 What it does not test, deliberately: injection, traversal, authentication,
 access control. Confirming any of those needs an out-of-band observer or a

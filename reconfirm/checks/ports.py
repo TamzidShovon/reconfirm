@@ -35,6 +35,62 @@ SERVICES = {
     9200: "Elasticsearch", 27017: "MongoDB",
 }
 
+MAX_PORT = 65535
+
+# A spec naming more ports than this is almost always a typo for a range the
+# user did not mean, and it turns an opt-in check into an hours-long one.
+SPEC_WARN_THRESHOLD = 2000
+
+
+class PortSpecError(ValueError):
+    """Raised when a --ports spec cannot be parsed."""
+
+
+def parse_ports(spec):
+    """Turn a spec like "80,443", "1-1024" or "-" into a sorted port list.
+
+    Accepts: a bare number, a comma-separated list, inclusive ranges, "-" or
+    "all" for every port, and "top" or an empty spec for DEFAULT_PORTS.
+    """
+    if spec is None:
+        return list(DEFAULT_PORTS)
+    text = str(spec).strip().lower()
+    if not text or text == "top":
+        return list(DEFAULT_PORTS)
+    if text in ("-", "all"):
+        return list(range(1, MAX_PORT + 1))
+
+    found = set()
+    for part in text.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part.lstrip("-"):
+            lo_text, _, hi_text = part.partition("-")
+            lo, hi = _port(lo_text, part), _port(hi_text, part)
+            if lo > hi:
+                raise PortSpecError(
+                    "range %r runs backwards; write it as %d-%d" % (part, hi, lo)
+                )
+            found.update(range(lo, hi + 1))
+        else:
+            found.add(_port(part, part))
+
+    if not found:
+        raise PortSpecError("no ports in spec %r" % spec)
+    return sorted(found)
+
+
+def _port(text, context):
+    text = text.strip()
+    if not text.isdigit():
+        raise PortSpecError("%r in %r is not a port number" % (text, context))
+    value = int(text)
+    if not 1 <= value <= MAX_PORT:
+        raise PortSpecError("port %d in %r is outside 1-%d" % (value, context, MAX_PORT))
+    return value
+
+
 OPEN = "open"
 CLOSED = "closed"
 FILTERED = "filtered"

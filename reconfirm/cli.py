@@ -11,8 +11,10 @@ from concurrent.futures import ThreadPoolExecutor
 
 from . import __version__, checks, report, sources
 from .checks import Target
+from .checks import ports as ports_check
 from .confidence import CONFIRMED, tally
 from .net import Scope, Session, addresses, resolves
+from .select import choose_hosts
 
 # Lookups are I/O bound and independent, and a dead name can sit on a
 # resolver timeout for over a second.
@@ -86,17 +88,51 @@ def cmd_enumerate(args):
     return 0
 
 
+def _requested_checks(explicit, ports_spec):
+    """Which check names a scan should run.
+
+    -p on its own means a port scan and nothing else. Adding it to the default
+    set instead would turn "scan these ports" into a full recon sweep, which
+    on one live run meant probing third-party storage endpoints nobody asked
+    about. Pair it with --checks to run both.
+    """
+    if explicit:
+        requested = list(explicit)
+        if ports_spec is not None and ports_check.NAME not in requested:
+            requested.append(ports_check.NAME)
+        return requested
+    if ports_spec is not None:
+        return [ports_check.NAME]
+    return list(checks.DEFAULT_CHECKS)
+
+
 def cmd_scan(args):
     emit = _emitter(args.quiet)
     session = _build_session(args, args.domain)
 
+    requested = _requested_checks(args.checks, args.ports)
+
     try:
-        modules = checks.get(args.checks or checks.DEFAULT_CHECKS)
+        modules = checks.get(requested)
     except KeyError as e:
         # str() on a KeyError reprs its argument, so the message would print
         # wrapped in quotes.
         print(e.args[0], file=sys.stderr)
         return 2
+
+    port_list = None
+    if args.ports is not None:
+        try:
+            port_list = ports_check.parse_ports(args.ports)
+        except ports_check.PortSpecError as e:
+            print("--ports: %s" % e, file=sys.stderr)
+            return 2
+        if len(port_list) > ports_check.SPEC_WARN_THRESHOLD:
+            print(
+                "note: --ports %r selects %d ports; this can take a while"
+                % (args.ports, len(port_list)),
+                file=sys.stderr,
+            )
 
     if args.hosts_from:
         # utf-8-sig, not utf-8: Notepad and PowerShell's Out-File write a
@@ -133,10 +169,25 @@ def cmd_scan(args):
         )
         hosts = hosts[:args.max_hosts]
 
-    # Cached by the partition above, so this costs only the formatting.
-    host_addresses = {h: addresses(h) for h in hosts} if args.ip else {}
-    if host_addresses:
+    # Resolved either way once --select needs it to show addresses in the
+    # table; cached by the earlier partition, so this costs only formatting.
+    host_addresses = {h: addresses(h) for h in hosts} if (args.ip or args.select) else {}
+    # --select prints its own host/address table right before prompting, so
+    # this one is skipped rather than shown twice.
+    if args.ip and not args.select:
         _print_addresses(host_addresses)
+
+    if args.select:
+        before = len(hosts)
+        hosts = choose_hosts(hosts, host_addresses, interactive=True)
+        if not hosts:
+            print("no hosts selected, nothing to do", file=sys.stderr)
+            return 0
+        if len(hosts) < before:
+            notes.append(
+                "%d of %d enumerated hosts were selected interactively" % (len(hosts), before)
+            )
+        host_addresses = {h: host_addresses[h] for h in hosts if h in host_addresses}
 
     target = Target(domain=args.domain, hosts=hosts)
     emit("probing %d hosts with %d check(s), %.1fs between requests"
@@ -153,7 +204,8 @@ def cmd_scan(args):
     results = []
     for module in modules:
         emit("running %s - %s" % (module.NAME, module.DESCRIPTION))
-        results.extend(module.run(session, target, emit=emit))
+        kwargs = {"ports": port_list} if module is ports_check else {}
+        results.extend(module.run(session, target, emit=emit, **kwargs))
 
     report.render(
         results,
@@ -218,6 +270,15 @@ def build_parser():
     p_scan.add_argument("--show-discarded", action="store_true",
                         help="include claims the tool ruled out, and why")
     p_scan.add_argument("--json", metavar="FILE", help="also write results as JSON")
+    p_scan.add_argument("-p", "--ports", metavar="SPEC", default=None,
+                        help="port(s) to scan, e.g. '80,443', '1-1024', 'all' "
+                             "(default: %d common ports). On its own this runs "
+                             "the ports check and nothing else; add --checks to "
+                             "run others alongside it"
+                             % len(ports_check.DEFAULT_PORTS))
+    p_scan.add_argument("--select", action="store_true",
+                        help="show the enumerated hosts and choose which to "
+                             "probe interactively, before scanning")
     p_scan.set_defaults(func=cmd_scan)
 
     return parser
