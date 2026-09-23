@@ -176,3 +176,30 @@ def test_default_checks_are_all_registered():
     from reconfirm import checks
 
     assert set(DEFAULT_CHECKS) <= set(checks.CHECKS)
+
+
+# --- banner readability ---
+
+def test_multiline_banner_keeps_its_headers_apart(listener):
+    # Filtering on isprintable drops \r and \n, so a three-header response
+    # arrives as "400 Bad RequestConnection: closeContent-Length: 0". Seen on
+    # a real router scan.
+    port = listener(banner=b"HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n")
+    _state, banner = ports.probe("127.0.0.1", port)
+    assert "RequestConnection" not in banner
+    assert "Bad Request Connection: close" in banner
+
+
+def test_control_characters_are_still_removed(listener):
+    # The reason the filter existed: a binary protocol's opening bytes are
+    # not a banner.
+    port = listener(banner=b"\x00\x01\x02ok\x07\r\n")
+    _state, banner = ports.probe("127.0.0.1", port)
+    assert banner.strip().endswith("ok")
+    assert "\x00" not in banner and "\x07" not in banner
+
+
+def test_banner_has_no_leading_or_trailing_whitespace(listener):
+    port = listener(banner=b"\r\n   SSH-2.0-OpenSSH_9.6   \r\n")
+    _state, banner = ports.probe("127.0.0.1", port)
+    assert banner == "SSH-2.0-OpenSSH_9.6"

@@ -133,10 +133,17 @@ def _banner(sock):
         data = sock.recv(BANNER_BYTES)
     except (socket.timeout, OSError):
         return ""
-    text = data.decode("utf-8", "replace").strip()
-    # Control characters turn a report into noise, and a binary protocol's
-    # first bytes are not a banner.
-    return "".join(c for c in text if c.isprintable())[:BANNER_BYTES]
+    text = data.decode("utf-8", "replace")
+    # Two separate jobs, in this order.
+    #
+    # Collapse whitespace first. Filtering on isprintable alone drops \r and
+    # \n and so glues header lines together: a real scan printed "400 Bad
+    # RequestConnection: closeContent-Length" for what were three headers.
+    collapsed = " ".join(text.split())
+    # Then drop what is left that cannot be shown. Collapsing does not remove
+    # the NUL and BEL bytes a binary protocol opens with, and those are not a
+    # banner.
+    return "".join(c for c in collapsed if c.isprintable())[:BANNER_BYTES]
 
 
 def scan_host(address, ports, timeout=CONNECT_TIMEOUT):
