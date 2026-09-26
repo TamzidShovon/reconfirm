@@ -167,6 +167,16 @@ python -m reconfirm scan example.com -p all      # every port, 1-65535
 `all`/`-` for every port. A spec naming more than 2000 ports prints a note
 rather than refusing, since a deliberate full sweep is legitimate and slow.
 
+Unlike every other check, `ports` talks to raw sockets instead of going
+through the rate-limited HTTP session, so by default it ignores `--delay`
+and `--timeout` and connects as fast as the thread pool allows. Add
+`--polite` to make it behave like the rest of the tool instead - use the
+session's timeout, and space probes apart by `--delay`:
+
+```bash
+python -m reconfirm scan example.com -p 1-1024 --polite --delay 1.0 --timeout 15
+```
+
 To run the usual checks *and* a port scan, name both:
 
 ```bash
@@ -212,7 +222,9 @@ blocks a piped or scripted run is worse than no prompt.
 
 Useful flags: `--delay` (gap between requests, default 0.3s), `--budget`
 (max requests per host, default 200), `--max-hosts` (default 50),
-`--also-scope` (additional authorised domains), `--no-wayback`.
+`--also-scope` (additional authorised domains), `--no-wayback`, `--polite`
+(ports check only - honor `--delay`/`--timeout` instead of connecting as fast
+as possible; see below).
 
 Exit code is 1 when something was confirmed, so it composes with CI steps and
 shell conditionals. Unverified results deliberately do not trip it.
@@ -300,10 +312,17 @@ supported it. Each rule in the doc prevents a specific false positive I hit.
   boundaries, so `notexample.com` is not inside `example.com`. A check that
   builds a URL outside scope raises rather than sending the request.
 - **Per-host request budget** bounds what a run can generate regardless of how
-  many candidates enumeration produced.
-- **Rate limited** by default, with cloud-storage and archive endpoints kept on
-  a separate path from target traffic.
-- **Secrets are redacted** in console and JSON output.
+  many candidates enumeration produced - and is tracked per host, so one host
+  running out never stops the run from probing the rest. Cloud-storage and
+  archive lookups (`buckets`, crt.sh, the Wayback Machine) don't draw against
+  it at all, since a guessed bucket name or a CT-log query belongs to the
+  provider, not the target.
+- **Rate limited** by default - one pacer covers every request the run makes,
+  target traffic and third-party lookups alike, so `--delay` bounds the whole
+  run's request rate rather than just what any single host sees.
+- **Secrets are redacted** in console and JSON output - a prefix and suffix
+  are kept (`AKIA************MPLE`) so triage and dedup by fingerprint still
+  work, but never enough to use the credential.
 
 Only run this against domains you are authorised to test.
 
@@ -320,9 +339,13 @@ then `python3 -m pytest tests/ -q`.
 
 CI runs the suite on Linux, macOS and Windows against Python 3.9, 3.11 and
 3.13, and additionally starts the CLI under a cp1252 Windows console -- the
-console that broke this tool's output twice.
+console that has broken this tool's output three times now, most recently
+when a live service's response (a captured port banner, a takeover
+fingerprint's surrounding HTML) carried real but non-ASCII Unicode through to
+evidence text. Printable is not the same guarantee as ASCII, and evidence
+that quotes a live response is never guaranteed to be either.
 
-130 tests. The checks are driven against a local HTTP server that serves the
+284 tests. The checks are driven against a local HTTP server that serves the
 awkward cases — a catch-all answering 200 to every path, a bucket listing whose
 keys belong to someone else, a PEM header with nothing behind it — because
 every rule here is a claim about behaviour against real responses, and
