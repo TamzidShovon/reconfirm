@@ -89,7 +89,7 @@ not.
 reason:
 
 ```
-DISCARDED — actively disproved  (2)
+DISCARDED - actively disproved  (2)
   [secrets] https://example.com/app.js
       API key assignment matched but rejected
       -> the value 'your_api_key_here' is a known placeholder, not a credential
@@ -97,7 +97,7 @@ DISCARDED — actively disproved  (2)
   [buckets] https://example-assets.s3.amazonaws.com
       publicly listable AWS S3 bucket 'example-assets' belongs to someone else
       -> the bucket is listable but its file keys reference neither
-         'example.com' nor 'example' — it belongs to an unrelated party
+         'example.com' nor 'example' - it belongs to an unrelated party
 ```
 
 If a rule is wrong, this is where you see it, and `tests/` is where you pin the
