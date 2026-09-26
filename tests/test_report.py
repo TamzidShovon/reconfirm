@@ -6,6 +6,15 @@ import json
 from reconfirm import report
 from reconfirm.confidence import CONFIRMED, confirmed, discarded, unverified
 
+ESC = "\x1b"
+
+
+class _TTYStream(io.StringIO):
+    """A stream that claims to be a terminal, to exercise the color path."""
+
+    def isatty(self):
+        return True
+
 
 def _sample():
     return [
@@ -59,6 +68,56 @@ def test_non_ascii_summary_does_not_crash_the_console():
                   u"unclaimed page — café ‘quoted’", "evidence"),
     ], stream=stream)
     stream.getvalue().encode("ascii")
+
+
+def test_color_is_used_on_a_tty(monkeypatch):
+    # NO_COLOR is a real ambient variable on some dev machines (this one
+    # included) and must not leak into a test asserting the opposite.
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    stream = _TTYStream()
+    report.render(_sample(), stream=stream)
+    out = stream.getvalue()
+    assert ESC + "[32m" in out  # CONFIRMED heading in green
+    assert ESC + "[33m" in out  # UNVERIFIED heading in yellow
+    assert ESC + "[0m" in out   # reset after each colored heading
+
+
+def test_color_is_absent_on_a_plain_stream(monkeypatch):
+    # io.StringIO has no isatty(), same as a redirected file or a pipe.
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    stream = io.StringIO()
+    report.render(_sample(), stream=stream)
+    assert ESC not in stream.getvalue()
+
+
+def test_no_color_env_var_disables_color_even_on_a_tty(monkeypatch):
+    monkeypatch.setenv("NO_COLOR", "1")
+    stream = _TTYStream()
+    report.render(_sample(), stream=stream)
+    assert ESC not in stream.getvalue()
+
+
+def test_colored_output_is_still_pure_ascii(monkeypatch):
+    # The escape codes themselves are ASCII (ESC is 0x1b); confirm the
+    # ASCII-safety guarantee for evidence/reason text still holds once color
+    # is layered on top, not just in the plain-stream case above.
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    stream = _TTYStream()
+    report.render(_sample(), stream=stream, show_discarded=True)
+    stream.getvalue().encode("ascii")
+
+
+def test_underline_rule_length_ignores_the_color_codes(monkeypatch):
+    # The rule must match the heading's visible width, not the width
+    # inflated by the ANSI codes wrapped around it.
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    stream = _TTYStream()
+    report.render(_sample(), stream=stream)
+    lines = stream.getvalue().splitlines()
+    heading_line = next(l for l in lines if "CONFIRMED" in l)
+    rule_line = lines[lines.index(heading_line) + 1]
+    visible_heading = heading_line.replace(ESC + "[32m", "").replace(ESC + "[0m", "")
+    assert rule_line == "-" * len(visible_heading)
 
 
 def test_discarded_hidden_by_default():
