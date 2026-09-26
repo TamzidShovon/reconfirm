@@ -204,7 +204,8 @@ def cmd_scan(args):
     results = []
     for module in modules:
         emit("running %s - %s" % (module.NAME, module.DESCRIPTION))
-        kwargs = {"ports": port_list} if module is ports_check else {}
+        kwargs = ({"ports": port_list, "polite": args.polite}
+                  if module is ports_check else {})
         results.extend(module.run(session, target, emit=emit, **kwargs))
 
     report.render(
@@ -279,6 +280,10 @@ def build_parser():
     p_scan.add_argument("--select", action="store_true",
                         help="show the enumerated hosts and choose which to "
                              "probe interactively, before scanning")
+    p_scan.add_argument("--polite", action="store_true",
+                        help="have the ports check honor --delay and "
+                             "--timeout instead of connecting as fast as "
+                             "possible (slower, gentler on fragile hosts)")
     p_scan.set_defaults(func=cmd_scan)
 
     return parser

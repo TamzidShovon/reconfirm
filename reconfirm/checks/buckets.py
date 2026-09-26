@@ -79,6 +79,20 @@ def candidates(domain):
     return [name + suffix for suffix in SUFFIXES]
 
 
+def _mentions(haystack, needle):
+    """Whether `needle` appears in `haystack` as a whole word.
+
+    A plain substring check means a short organisation name (candidates()
+    guesses at "go", "hi", "box" and the like from short domains) matches
+    routine, unrelated words - "go" inside "logo", "arc" inside "search" -
+    and confirms ownership of someone else's bucket on nothing but
+    coincidence. Word boundaries do not fully close that off (a filename can
+    still legitimately contain the word as its own token), but they remove
+    the collisions that are pure accidents of spelling.
+    """
+    return re.search(r"\b%s\b" % re.escape(needle), haystack) is not None
+
+
 def _ownership(keys, domain):
     if not keys:
         return "empty", (
@@ -88,7 +102,7 @@ def _ownership(keys, domain):
     haystack = " ".join(keys).lower()
     name = organisation_name(domain)
     root = root_domain(domain)
-    if root.lower() in haystack or name in haystack:
+    if _mentions(haystack, root) or _mentions(haystack, name):
         return "owned", ""
     return "foreign", (
         "the bucket is listable but its file keys reference neither %r nor %r - "

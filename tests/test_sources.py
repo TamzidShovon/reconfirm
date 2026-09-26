@@ -84,6 +84,72 @@ def test_non_json_from_crtsh_is_a_note_not_a_crash():
     assert any("rate-limiting" in n for n in notes)
 
 
+def test_crtsh_json_null_is_a_note_not_a_crash():
+    # A bare "null" body is valid JSON, so it doesn't hit the non-JSON path,
+    # but iterating None crashes if nothing checks the shape first.
+    class NullResponse:
+        status_code = 200
+        text = "null"
+
+        def json(self):
+            return None
+
+    session = FakeSession({
+        "crt.sh": (NullResponse(), None),
+        "archive.org": (FakeResponse(200, text=""), None),
+    })
+    hosts, notes = sources.enumerate_hosts(session, "example.com")
+    assert hosts == ["example.com"]
+    assert any("not a list" in n for n in notes)
+
+
+def test_crtsh_json_error_object_is_a_note_not_a_crash():
+    # A JSON object instead of the documented array: iterating a dict yields
+    # its keys (strings), and entry.get(...) on a string crashes.
+    session = FakeSession({
+        "crt.sh": (FakeResponse(200, payload={"error": "not found"}), None),
+        "archive.org": (FakeResponse(200, text=""), None),
+    })
+    hosts, notes = sources.enumerate_hosts(session, "example.com")
+    assert hosts == ["example.com"]
+    assert any("not a list" in n for n in notes)
+
+
+def test_crtsh_non_object_entries_are_skipped_not_crashed():
+    session = FakeSession({
+        "crt.sh": (FakeResponse(200, payload=[
+            "not-a-dict", {"name_value": "api.example.com"},
+        ]), None),
+        "archive.org": (FakeResponse(200, text=""), None),
+    })
+    hosts, _notes = sources.enumerate_hosts(session, "example.com")
+    assert "api.example.com" in hosts
+
+
+def test_mixed_case_domain_still_matches_crtsh_results():
+    # "Example.COM" as typed on the CLI must not silently discard every
+    # crt.sh result for it - _clean() lowercases each candidate before
+    # comparing it against the domain, so the domain has to be lowercased
+    # too, or nothing it finds will ever match.
+    session = FakeSession({
+        "crt.sh": (FakeResponse(200, payload=[{"name_value": "api.example.com"}]), None),
+        "archive.org": (FakeResponse(200, text=""), None),
+    })
+    hosts, _notes = sources.enumerate_hosts(session, "Example.COM")
+    assert "api.example.com" in hosts
+    assert "example.com" in hosts
+
+
+def test_trailing_dot_domain_still_matches_crtsh_results():
+    session = FakeSession({
+        "crt.sh": (FakeResponse(200, payload=[{"name_value": "api.example.com"}]), None),
+        "archive.org": (FakeResponse(200, text=""), None),
+    })
+    hosts, _notes = sources.enumerate_hosts(session, "example.com.")
+    assert "api.example.com" in hosts
+    assert "example.com" in hosts
+
+
 def test_wayback_can_be_skipped():
     session = FakeSession({"crt.sh": (FakeResponse(200, payload=[]), None)})
     sources.enumerate_hosts(session, "example.com", use_wayback=False)

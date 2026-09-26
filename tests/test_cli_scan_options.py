@@ -71,6 +71,16 @@ def test_enumerate_has_no_ports_or_select_flags():
     assert not hasattr(args, "select")
 
 
+def test_polite_defaults_to_off():
+    args = build_parser().parse_args(["scan", "example.com"])
+    assert args.polite is False
+
+
+def test_polite_flag():
+    args = build_parser().parse_args(["scan", "example.com", "--polite"])
+    assert args.polite is True
+
+
 # --- error paths, driven through cmd_scan itself ---
 
 class _Args:
@@ -87,6 +97,7 @@ class _Args:
         self.checks = None
         self.ports = None
         self.select = False
+        self.polite = False
         self.hosts_from = None
         self.no_wayback = True
         self.max_hosts = 1
@@ -132,6 +143,21 @@ def test_ip_table_is_suppressed_when_select_also_shows_one(monkeypatch):
     )
     cmd_scan(_Args(checks=["takeover"], ip=True, select=True, hosts_from=None))
     assert calls == []
+
+
+def test_polite_flag_reaches_the_ports_check(monkeypatch):
+    # cmd_scan builds the ports check's kwargs itself; confirm --polite
+    # actually gets passed through rather than only parsed.
+    monkeypatch.setattr(
+        "reconfirm.cli.sources.enumerate_hosts", lambda *a, **kw: ([], [])
+    )
+    calls = []
+    monkeypatch.setattr(
+        "reconfirm.cli.ports_check.run",
+        lambda session, target, emit=None, **kw: calls.append(kw) or [],
+    )
+    cmd_scan(_Args(checks=["ports"], polite=True, hosts_from=None))
+    assert calls == [{"ports": None, "polite": True}]
 
 
 def test_huge_port_spec_warns_but_does_not_exit(capsys, monkeypatch):

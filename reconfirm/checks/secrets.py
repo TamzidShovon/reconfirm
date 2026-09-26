@@ -151,6 +151,11 @@ def _collect_sources(session, host):
             # Out of scope by design: a key in a third-party CDN bundle is
             # not this target's finding.
             continue
+        except BudgetExhausted:
+            # A different script source might be on another host that still
+            # has its own budget to spend - and whatever was already fetched
+            # this call must not be thrown away with the one that ran out.
+            continue
         if script is not None:
             sources.append((url, script.text))
     return sources, ""
@@ -255,8 +260,11 @@ def run(session, target, emit=None):
             results.append(unverified(NAME, host, "not scanned", str(e)))
             continue
         except BudgetExhausted as e:
+            # Per-host, not per-run: Session tracks the budget separately for
+            # each hostname, so host B still has its full budget even though
+            # host A just spent its own.
             results.append(inconclusive(NAME, host, "not scanned", e))
-            break
+            continue
 
         if not sources:
             results.append(

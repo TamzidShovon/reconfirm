@@ -57,8 +57,11 @@ def run(session, target, emit=None):
             results.append(unverified(NAME, host, "not probed", str(e)))
             continue
         except BudgetExhausted as e:
+            # Per-host, not per-run: Session tracks the budget separately for
+            # each hostname, so host B still has its full budget even though
+            # host A just spent its own.
             results.append(inconclusive(NAME, host, "not probed", e))
-            break
+            continue
 
         if response is None:
             # Resolves but nothing answered: a firewalled host and a dead
@@ -82,7 +85,23 @@ def run(session, target, emit=None):
                 continue
 
             matched = True
-            if session.is_catchall_response(url, response):
+            try:
+                is_catchall = session.is_catchall_response(url, response)
+            except BudgetExhausted as e:
+                # The catch-all probe is itself a request, and the marker
+                # match and a spent budget can land on the same host at the
+                # same time. A real unclaimed-instance page and a catch-all
+                # serving the same text are indistinguishable without it -
+                # report what was seen, not a guess at which one this is.
+                results.append(
+                    inconclusive(
+                        NAME, url,
+                        "%s marker present, could not rule out a catch-all" % service,
+                        e,
+                    )
+                )
+                break
+            if is_catchall:
                 results.append(
                     discarded(
                         NAME, url,

@@ -2,6 +2,7 @@
 
 import socket
 import threading
+import time
 
 import pytest
 
@@ -203,3 +204,86 @@ def test_banner_has_no_leading_or_trailing_whitespace(listener):
     port = listener(banner=b"\r\n   SSH-2.0-OpenSSH_9.6   \r\n")
     _state, banner = ports.probe("127.0.0.1", port)
     assert banner == "SSH-2.0-OpenSSH_9.6"
+
+
+def test_banner_drops_unicode_that_decodes_validly(listener):
+    # A binary service's opening bytes can happen to form valid multi-byte
+    # UTF-8. str.isprintable() is true for that text, but it is not ASCII,
+    # and the Windows console (cp1252) cannot display it - it prints as
+    # mojibake instead. Seen live scanning scanme.nmap.org:9929 (nping-echo).
+    port = listener(banner=b"ok\xc3\xa9tail")  # \xc3\xa9 is valid UTF-8 for "e-acute"
+    _state, banner = ports.probe("127.0.0.1", port)
+    assert all(ord(c) < 128 for c in banner)
+    assert banner == "oktail"
+
+
+# --- polite mode ---
+
+def test_default_mode_ignores_session_delay(listener):
+    # session fixture's own min_interval is 0.0; give it a slow one here and
+    # confirm a fast (non-polite) scan does not honor it. Uses open listeners,
+    # not refused ports: this Windows box takes ~2s to RST a refused loopback
+    # connection, which would swamp the timing signal this test is after.
+    port1, port2 = listener(), listener()
+    scoped = Session(Scope(["127.0.0.1"]), min_interval=1.0, timeout=1.0)
+    start = time.monotonic()
+    ports.run(scoped, Target(domain="127.0.0.1", hosts=["127.0.0.1"]),
+              ports=[port1, port2])
+    assert time.monotonic() - start < 0.5
+
+
+def test_polite_mode_paces_probes_by_session_delay(listener):
+    port1, port2 = listener(), listener()
+    scoped = Session(Scope(["127.0.0.1"]), min_interval=0.2, timeout=1.0)
+    start = time.monotonic()
+    ports.run(scoped, Target(domain="127.0.0.1", hosts=["127.0.0.1"]),
+              ports=[port1, port2], polite=True)
+    # Two probes at least one interval apart: >= 0.2s, not the sub-millisecond
+    # a fast scan of two accepting ports would otherwise take.
+    assert time.monotonic() - start >= 0.2
+
+
+def test_polite_mode_uses_session_timeout_not_the_fast_default():
+    # 192.0.2.1 is not routed, so the connection times out rather than being
+    # refused. A short session timeout should cut that wait well below the
+    # 3.0s CONNECT_TIMEOUT a fast scan would use.
+    scoped = Session(Scope(["192.0.2.1"]), min_interval=0.0, timeout=0.3)
+    start = time.monotonic()
+    ports.run(scoped, Target(domain="192.0.2.1", hosts=["192.0.2.1"]),
+              ports=[80], polite=True)
+    assert time.monotonic() - start < 1.5
+
+
+def test_scan_host_delay_serialises_instead_of_running_concurrently():
+    # A concurrent pool with paced starts would still overlap; polite mode's
+    # point is that the target only ever sees one connection at a time.
+    seen_concurrent = []
+    lock = threading.Lock()
+    active = [0]
+
+    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(8)
+    port = srv.getsockname()[1]
+
+    def serve():
+        for _ in range(3):
+            conn, _addr = srv.accept()
+            with lock:
+                active[0] += 1
+                seen_concurrent.append(active[0])
+            time.sleep(0.05)
+            with lock:
+                active[0] -= 1
+            conn.close()
+
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+    try:
+        ports.scan_host("127.0.0.1", [port, port, port], delay=0.01)
+    finally:
+        srv.close()
+        thread.join(timeout=1)
+
+    assert max(seen_concurrent) == 1

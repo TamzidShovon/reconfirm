@@ -56,8 +56,17 @@ def from_certificates(session, domain, limit=500):
         # crt.sh serves an HTML error page under load rather than a JSON error.
         return [], "crt.sh returned a non-JSON body (it is likely rate-limiting)"
 
+    if not isinstance(entries, list):
+        # Also seen under load: valid JSON that is not the documented array -
+        # null, or an error object. Iterating either crashes outright (None)
+        # or silently wrong (a dict yields its keys, not entries), so this is
+        # treated the same as a non-JSON body rather than let through.
+        return [], "crt.sh returned JSON that was not a list of entries"
+
     found = set()
     for entry in entries:
+        if not isinstance(entry, dict):
+            continue
         # One entry can carry several SANs, newline-separated.
         for raw in (entry.get("name_value") or "").split("\n"):
             name = _clean(raw, domain)
@@ -88,9 +97,16 @@ def from_wayback(session, domain, limit=2000):
 def enumerate_hosts(session, domain, use_wayback=True, emit=None):
     """Run every enabled source and merge the candidates."""
     emit = emit or (lambda _msg: None)
+    # Normalised once and used everywhere below. _clean() lowercases every
+    # candidate it considers before comparing it against this domain; passing
+    # it the raw, un-normalised CLI argument silently discarded every result
+    # for a mixed-case or trailing-dot domain ("Example.COM" found nothing,
+    # "example.com" found everything) since nothing on the candidate's side
+    # was ever going to match un-lowercased text.
+    domain = domain.lower().strip().rstrip(".")
     # The apex is given, not discovered. Seeding it means a source outage
     # degrades to "checked the apex only" rather than checking nothing.
-    candidates = {domain.lower().strip().rstrip(".")}
+    candidates = {domain}
     notes = []
 
     if is_ip_literal(domain):

@@ -6,12 +6,20 @@ and a timeout proves nothing either way.
 
 Opt in with --checks ports. This is the only check that opens connections to
 ports a browser would not, so it never runs unless asked for.
+
+Unlike every other check, this one talks to sockets directly instead of
+through Session.get(), so by default it ignores --delay and --timeout and
+connects as fast as the thread pool allows. --polite makes it use the
+session's timeout and space connections apart by the session's delay,
+trading speed for being as gentle on the target as the other checks are.
 """
 
 NAME = "ports"
 DESCRIPTION = "TCP ports accepting connections"
 
 import socket
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 from ..confidence import confirmed, discarded, unverified
@@ -101,8 +109,31 @@ BANNER_BYTES = 120
 WORKERS = 16
 
 
-def probe(address, port, timeout=CONNECT_TIMEOUT):
+class _Pacer:
+    """Serialises probe start times to at least `interval` seconds apart.
+
+    An HTTP check gets this for free from Session.get(); a raw socket
+    connect has no shared queue to throttle, so polite mode gives ports
+    the same gate by hand.
+    """
+
+    def __init__(self, interval):
+        self.interval = interval
+        self._lock = threading.Lock()
+        self._last = 0.0
+
+    def wait(self):
+        with self._lock:
+            gap = time.monotonic() - self._last
+            if gap < self.interval:
+                time.sleep(self.interval - gap)
+            self._last = time.monotonic()
+
+
+def probe(address, port, timeout=CONNECT_TIMEOUT, pacer=None):
     """Connect to one port. Returns (state, banner)."""
+    if pacer is not None:
+        pacer.wait()
     family = socket.AF_INET6 if ":" in address else socket.AF_INET
     sock = socket.socket(family, socket.SOCK_STREAM)
     sock.settimeout(timeout)
@@ -134,28 +165,48 @@ def _banner(sock):
     except (socket.timeout, OSError):
         return ""
     text = data.decode("utf-8", "replace")
-    # Two separate jobs, in this order.
+    # Three separate jobs, in this order.
     #
-    # Collapse whitespace first. Filtering on isprintable alone drops \r and
+    # Collapse whitespace first. Filtering on printability alone drops \r and
     # \n and so glues header lines together: a real scan printed "400 Bad
     # RequestConnection: closeContent-Length" for what were three headers.
     collapsed = " ".join(text.split())
     # Then drop what is left that cannot be shown. Collapsing does not remove
     # the NUL and BEL bytes a binary protocol opens with, and those are not a
     # banner.
-    return "".join(c for c in collapsed if c.isprintable())[:BANNER_BYTES]
+    printable = "".join(c for c in collapsed if c.isprintable())
+    # Finally, restrict to ASCII. A binary service (scanme.nmap.org's
+    # nping-echo on 9929, seen live) fills its greeting with bytes that
+    # happen to form valid multi-byte UTF-8 - str.isprintable() is true for
+    # that Unicode, but the Windows console is cp1252 and cannot show it.
+    return printable.encode("ascii", "ignore").decode("ascii")[:BANNER_BYTES]
 
 
-def scan_host(address, ports, timeout=CONNECT_TIMEOUT):
-    """Probe every port on one address. Returns {port: (state, banner)}."""
-    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
-        outcomes = list(pool.map(lambda p: probe(address, p, timeout), ports))
+def scan_host(address, ports, timeout=CONNECT_TIMEOUT, delay=0.0, workers=WORKERS):
+    """Probe every port on one address. Returns {port: (state, banner)}.
+
+    delay=0 (the default) fires every probe as fast as the thread pool
+    allows. delay>0 paces probe starts that far apart and runs them one at a
+    time, since spacing out starts within a still-concurrent pool would not
+    actually bound the rate the target sees.
+    """
+    pacer = _Pacer(delay) if delay > 0 else None
+    effective_workers = 1 if pacer else workers
+    with ThreadPoolExecutor(max_workers=effective_workers) as pool:
+        outcomes = list(pool.map(lambda p: probe(address, p, timeout, pacer), ports))
     return dict(zip(ports, outcomes))
 
 
-def run(session, target, emit=None, ports=None):
+def run(session, target, emit=None, ports=None, polite=False):
+    """polite=True makes this check behave like the others: it uses the
+    session's --timeout and --delay instead of connecting as fast as
+    possible. Default is fast, since a scan the user explicitly opted into
+    is not the case --delay was built to protect against.
+    """
     emit = emit or (lambda _msg: None)
     ports = ports or DEFAULT_PORTS
+    timeout = session.timeout if polite else CONNECT_TIMEOUT
+    delay = session.min_interval if polite else 0.0
     results = []
 
     for host in target.hosts:
@@ -175,7 +226,7 @@ def run(session, target, emit=None, ports=None):
             )
             continue
 
-        outcomes = scan_host(name, ports)
+        outcomes = scan_host(name, ports, timeout=timeout, delay=delay)
         opened = [p for p, (state, _b) in outcomes.items() if state == OPEN]
         closed = [p for p, (state, _b) in outcomes.items() if state == CLOSED]
         filtered = [p for p, (state, _b) in outcomes.items() if state == FILTERED]

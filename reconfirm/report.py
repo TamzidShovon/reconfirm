@@ -29,6 +29,20 @@ def _use_color(stream):
     return hasattr(stream, "isatty") and stream.isatty()
 
 
+def _write(stream, text):
+    """Write, dropping anything the Windows console (cp1252) cannot show.
+
+    Evidence and reasons often quote text pulled straight from a live
+    response - a takeover fingerprint's surrounding HTML, a secret's
+    captured value - and that text is not guaranteed to be ASCII, let alone
+    encodable in cp1252. Seen live: CJK characters landing in an unredacted
+    slice of a secrets.py match crashed the console outright. JSON output
+    keeps full fidelity (see to_json below); only this renderer needs it
+    stripped, so the check modules stay free to collect what they find.
+    """
+    stream.write(text.encode("ascii", "ignore").decode("ascii"))
+
+
 def _wrap(text, width, indent, hanging=None):
     if hanging is None:
         hanging = " " * len(indent)
@@ -60,30 +74,30 @@ def render(results, stream=None, show_discarded=False, width=96, notes=None):
         rule = "-" * min(width, len(heading))
         if color:
             heading = _COLORS[state] + heading + _RESET
-        stream.write("\n" + heading + "\n")
-        stream.write(rule + "\n")
+        _write(stream, "\n" + heading + "\n")
+        _write(stream, rule + "\n")
 
         for r in group:
-            stream.write("  [%s] %s\n" % (r.check, r.target))
+            _write(stream, "  [%s] %s\n" % (r.check, r.target))
             for line in _wrap(r.summary, width, "      "):
-                stream.write(line + "\n")
+                _write(stream, line + "\n")
             if r.evidence:
                 for line in r.evidence.splitlines()[:8]:
-                    stream.write("      | %s\n" % line[:width - 8])
+                    _write(stream, "      | %s\n" % line[:width - 8])
             if r.reason:
                 for line in _wrap(r.reason, width, "      -> ", hanging=" " * 9):
-                    stream.write(line + "\n")
-            stream.write("\n")
+                    _write(stream, line + "\n")
+            _write(stream, "\n")
 
     summary = "%d confirmed, %d unverified, %d discarded" % (
         counts[CONFIRMED], counts[UNVERIFIED], counts[DISCARDED],
     )
     if not show_discarded and counts[DISCARDED]:
         summary += "  (re-run with --show-discarded to see what was ruled out and why)"
-    stream.write(summary + "\n")
+    _write(stream, summary + "\n")
 
     for note in notes or []:
-        stream.write("note: %s\n" % note)
+        _write(stream, "note: %s\n" % note)
 
 
 def to_json(results, domain, notes=None, requests_made=None, addresses=None):

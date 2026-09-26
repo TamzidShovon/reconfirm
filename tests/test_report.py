@@ -28,6 +28,39 @@ def test_output_is_pure_ascii():
     stream.getvalue().encode("ascii")
 
 
+def test_non_ascii_evidence_does_not_crash_the_console():
+    # Evidence and reasons can carry text pulled straight from a live
+    # response - a takeover fingerprint's surrounding HTML, a secret's
+    # captured value - which is not guaranteed to be ASCII or even
+    # cp1252-encodable. Seen live: CJK characters in a takeover snippet and
+    # in an unredacted secrets.py match both crashed a cp1252 console.
+    stream = io.StringIO()
+    report.render([
+        confirmed(
+            "takeover", "http://x.example.com", "serves an unclaimed page",
+            u"找不到页面 No such app 页面不存在",
+        ),
+        unverified(
+            "secrets", "http://y.example.com/app.js", "assignment matched",
+            u"reason with a café and 中文 in it",
+        ),
+    ], stream=stream, show_discarded=True)
+    out = stream.getvalue()
+    out.encode("ascii")  # must not raise
+    out.encode("cp1252")  # must not raise
+    assert "No such app" in out
+    assert "assignment matched" in out
+
+
+def test_non_ascii_summary_does_not_crash_the_console():
+    stream = io.StringIO()
+    report.render([
+        confirmed("takeover", "http://x.example.com",
+                  u"unclaimed page — café ‘quoted’", "evidence"),
+    ], stream=stream)
+    stream.getvalue().encode("ascii")
+
+
 def test_discarded_hidden_by_default():
     stream = io.StringIO()
     report.render(_sample(), stream=stream)

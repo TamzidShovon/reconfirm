@@ -2,6 +2,7 @@
 
 from reconfirm.checks import Target, takeover
 from reconfirm.confidence import CONFIRMED, DISCARDED, UNVERIFIED
+from reconfirm.net import BudgetExhausted, Scope, Session
 from tests.conftest import Routes
 
 
@@ -67,3 +68,45 @@ def test_one_result_per_host(server, session):
 
     results = takeover.run(session, _target(origin))
     assert len(results) == 1
+
+
+def test_budget_exhaustion_on_one_host_does_not_skip_the_rest(monkeypatch, session):
+    # per_host_budget is tracked separately per hostname (Session._host_counts
+    # is keyed by host), so host B still has its own full budget even though
+    # host A just spent its own. The loop must not treat one host's exhaustion
+    # as a reason to stop probing every host after it.
+    calls = []
+
+    def fake_fetch_site(_session, host, **_kw):
+        calls.append(host)
+        if host == "a.invalid":
+            raise BudgetExhausted("a.invalid: per-host budget of 1 requests is spent")
+        return "http://b.invalid", None, "connection refused"
+
+    monkeypatch.setattr(takeover, "fetch_site", fake_fetch_site)
+    monkeypatch.setattr(takeover, "resolves", lambda h: True)
+
+    target = Target(domain="invalid", hosts=["a.invalid", "b.invalid"])
+    results = takeover.run(session, target)
+
+    assert calls == ["a.invalid", "b.invalid"]
+    assert [r.target for r in results] == ["a.invalid", "b.invalid"]
+
+
+def test_budget_exhausted_during_the_catchall_probe_does_not_crash(server):
+    # The catch-all probe is its own request, fired only once a marker
+    # matches. A marker match and a budget that runs out right then must
+    # degrade to a result, not an unhandled exception through the whole scan.
+    routes = Routes().add("/", "<html>No such app</html>")
+    origin = server(routes)
+
+    # The test server is HTTP-only: fetch_site spends one request failing
+    # over https and one succeeding over http, leaving nothing for the
+    # catch-all probe the marker match is about to trigger.
+    tight_session = Session(Scope(["127.0.0.1"]), min_interval=0.0, timeout=5,
+                             per_host_budget=2)
+
+    results = takeover.run(tight_session, _target(origin))
+
+    assert [r.state for r in results] == [UNVERIFIED]
+    assert "could not rule out a catch-all" in results[0].summary

@@ -61,6 +61,24 @@ def test_ownership_match_is_case_insensitive():
     assert state == "owned"
 
 
+def test_short_org_name_is_not_fooled_by_an_unrelated_word_containing_it():
+    # candidates() guesses short names from short domains ("go.dev" -> "go"),
+    # and a plain substring check then matches "go" inside "logo" - an
+    # ordinary word in a totally unrelated bucket, not evidence of anything.
+    state, reason = buckets._ownership(
+        ["logo.png", "company-logo-2023.svg", "banner.jpg"], "go.dev"
+    )
+    assert state == "foreign"
+    assert "unrelated party" in reason
+
+
+def test_org_name_as_its_own_token_still_proves_ownership():
+    # The word-boundary fix must not stop matching the legitimate case: the
+    # name appearing as its own token, just hyphenated rather than bare.
+    state, _ = buckets._ownership(["backup-go-2024.tar.gz"], "go.dev")
+    assert state == "owned"
+
+
 # --- IP-literal targets ---
 
 @pytest.mark.parametrize("target", [

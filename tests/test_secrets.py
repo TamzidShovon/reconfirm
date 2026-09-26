@@ -4,6 +4,7 @@ import pytest
 
 from reconfirm.checks import Target, secrets
 from reconfirm.confidence import CONFIRMED, DISCARDED, UNVERIFIED
+from reconfirm.net import BudgetExhausted, Scope, Session
 from tests.conftest import Routes
 
 
@@ -121,3 +122,56 @@ def test_run_reports_no_scripts_as_unverified(server, session):
 
     assert [r.state for r in results] == [UNVERIFIED]
     assert "no scripts" in results[0].summary
+
+
+def test_budget_exhaustion_on_one_host_does_not_skip_the_rest(monkeypatch, session):
+    # per_host_budget is tracked separately per hostname (Session._host_counts
+    # is keyed by host), so host B still has its own full budget even though
+    # host A just spent its own scanning scripts. A secret sitting on host B
+    # must not go unreported just because host A ran out first.
+    calls = []
+
+    def fake_collect(_session, host):
+        calls.append(host)
+        if host == "a.invalid":
+            raise BudgetExhausted("a.invalid: per-host budget of 1 requests is spent")
+        return [("http://b.invalid/app.js", 'var k="AKIAIOSFODNN7EXAMPLE";')], ""
+
+    monkeypatch.setattr(secrets, "_collect_sources", fake_collect)
+    monkeypatch.setattr(secrets, "resolves", lambda h: True)
+
+    target = Target(domain="invalid", hosts=["a.invalid", "b.invalid"])
+    results = secrets.run(session, target)
+
+    assert calls == ["a.invalid", "b.invalid"]
+    confirmed = [r for r in results if r.state == CONFIRMED]
+    assert len(confirmed) == 1
+    assert "app.js" in confirmed[0].target
+
+
+def test_a_script_fetched_before_the_budget_ran_out_is_still_scanned(server):
+    # Losing the whole host's results because the LAST script in the list
+    # couldn't be fetched would also lose the secret sitting in the first
+    # one, which was already paid for and already in hand.
+    routes = Routes()
+    routes.add(
+        "/",
+        '<html><script src="/app1.js"></script>'
+        '<script src="/app2.js"></script></html>',
+    )
+    routes.add("/app1.js", 'var k="AKIAIOSFODNN7EXAMPLE";', ctype="application/javascript")
+    routes.add("/app2.js", "console.log('never reached')", ctype="application/javascript")
+    origin = server(routes)
+    host = origin.split("//")[1]
+
+    # The test server is HTTP-only, so fetch_site spends one request failing
+    # over https before the one that succeeds over http: 2 of the budget.
+    # The 3rd buys exactly one script fetch before the budget is spent.
+    tight_session = Session(Scope(["127.0.0.1"]), min_interval=0.0, timeout=5,
+                             per_host_budget=3)
+
+    results = secrets.run(tight_session, Target(domain="127.0.0.1", hosts=[host]))
+
+    confirmed = [r for r in results if r.state == CONFIRMED]
+    assert len(confirmed) == 1
+    assert "app1.js" in confirmed[0].target
